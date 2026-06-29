@@ -1,0 +1,21 @@
+CrimeSubHeadID,CrimeHeadID,CrimeHeadName,SeqID
+1,1,Murder,1
+2,1,Attempt to Murder,2
+3,1,Grievous Hurt,3
+4,1,Simple Assault,4
+5,2,Vehicle Theft,5
+6,2,House Burglary,6
+7,2,Chain Snatching,7
+8,2,Commercial Robbery,8
+9,2,Pickpocketing,9
+10,3,Eve Teasing,10
+11,3,Domestic Violence,11
+12,3,Sexual Assault,12
+13,4,Cheating,13
+14,4,Fraud,14
+15,5,Atrocity (SC/ST Act),15
+16,6,Cyber Fraud,16
+17,6,Online Harassment,17
+18,7,NDPS Possession,18
+19,7,NDPS Trafficking,19
+20,8,Other IPC Offence,20

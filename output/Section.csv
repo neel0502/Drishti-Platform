@@ -1,0 +1,18 @@
+ActCode,SectionCode,SectionDescription,Active
+IPC,302,Murder,1
+IPC,307,Attempt to Murder,1
+IPC,326,Voluntarily Causing Grievous Hurt,1
+IPC,323,Voluntarily Causing Hurt,1
+IPC,379,Theft,1
+IPC,380,Theft in Dwelling House,1
+IPC,392,Robbery,1
+IPC,420,Cheating,1
+IPC,354,Assault on Woman,1
+IPC,498A,Husband Cruelty,1
+IPC,376,Rape,1
+NDPS,20,Possession of Cannabis,1
+NDPS,21,Possession of Manufactured Drugs,1
+SCST,3,Atrocities Against SC/ST,1
+IT,66C,Identity Theft,1
+IT,66D,Cheating by Personation,1
+DV,3,Domestic Violence,1
