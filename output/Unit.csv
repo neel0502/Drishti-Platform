@@ -1,0 +1,185 @@
+UnitID,UnitName,TypeID,ParentUnit,StateID,DistrictID,Active
+1,Bangalore Urban PS,1,,1,1,1
+2,Bangalore Urban Town PS,1,,1,1,1
+3,Bangalore Urban Rural PS,1,,1,1,1
+4,Bangalore Urban North PS,1,,1,1,1
+5,Bangalore Urban South PS,1,,1,1,1
+6,Bangalore Urban East PS,1,,1,1,1
+7,Bangalore Urban West PS,1,,1,1,1
+8,Bangalore Urban PS,1,,1,1,1
+9,Bangalore Urban Town PS,1,,1,1,1
+10,Bangalore Urban Rural PS,1,,1,1,1
+11,Bangalore Urban North PS,1,,1,1,1
+12,Bangalore Urban South PS,1,,1,1,1
+13,Bangalore Urban East PS,1,,1,1,1
+14,Bangalore Urban West PS,1,,1,1,1
+15,Bangalore Urban PS,1,,1,1,1
+16,Bangalore Urban Town PS,1,,1,1,1
+17,Bangalore Urban Rural PS,1,,1,1,1
+18,Bangalore Urban North PS,1,,1,1,1
+19,Bangalore Urban South PS,1,,1,1,1
+20,Bangalore Urban East PS,1,,1,1,1
+21,Bangalore Urban West PS,1,,1,1,1
+22,Bangalore Urban PS,1,,1,1,1
+23,Bangalore Urban Town PS,1,,1,1,1
+24,Bangalore Urban Rural PS,1,,1,1,1
+25,Bangalore Urban North PS,1,,1,1,1
+26,Bangalore Urban South PS,1,,1,1,1
+27,Bangalore Urban East PS,1,,1,1,1
+28,Bangalore Urban West PS,1,,1,1,1
+29,Bangalore Urban PS,1,,1,1,1
+30,Bangalore Urban Town PS,1,,1,1,1
+31,Bangalore Urban Rural PS,1,,1,1,1
+32,Bangalore Urban North PS,1,,1,1,1
+33,Bangalore Rural PS,1,,1,2,1
+34,Bangalore Rural Town PS,1,,1,2,1
+35,Bangalore Rural Rural PS,1,,1,2,1
+36,Bangalore Rural North PS,1,,1,2,1
+37,Bangalore Rural South PS,1,,1,2,1
+38,Bangalore Rural East PS,1,,1,2,1
+39,Bangalore Rural West PS,1,,1,2,1
+40,Mysuru PS,1,,1,3,1
+41,Mysuru Town PS,1,,1,3,1
+42,Mysuru Rural PS,1,,1,3,1
+43,Mysuru North PS,1,,1,3,1
+44,Mysuru South PS,1,,1,3,1
+45,Mysuru East PS,1,,1,3,1
+46,Mysuru West PS,1,,1,3,1
+47,Mysuru PS,1,,1,3,1
+48,Mysuru Town PS,1,,1,3,1
+49,Mysuru Rural PS,1,,1,3,1
+50,Mysuru North PS,1,,1,3,1
+51,Mysuru South PS,1,,1,3,1
+52,Belagavi PS,1,,1,4,1
+53,Belagavi Town PS,1,,1,4,1
+54,Belagavi Rural PS,1,,1,4,1
+55,Belagavi North PS,1,,1,4,1
+56,Belagavi South PS,1,,1,4,1
+57,Belagavi East PS,1,,1,4,1
+58,Belagavi West PS,1,,1,4,1
+59,Belagavi PS,1,,1,4,1
+60,Belagavi Town PS,1,,1,4,1
+61,Belagavi Rural PS,1,,1,4,1
+62,Kalaburagi PS,1,,1,5,1
+63,Kalaburagi Town PS,1,,1,5,1
+64,Kalaburagi Rural PS,1,,1,5,1
+65,Kalaburagi North PS,1,,1,5,1
+66,Kalaburagi South PS,1,,1,5,1
+67,Kalaburagi East PS,1,,1,5,1
+68,Kalaburagi West PS,1,,1,5,1
+69,Kalaburagi PS,1,,1,5,1
+70,Kalaburagi Town PS,1,,1,5,1
+71,Dakshina Kannada PS,1,,1,6,1
+72,Dakshina Kannada Town PS,1,,1,6,1
+73,Dakshina Kannada Rural PS,1,,1,6,1
+74,Dakshina Kannada North PS,1,,1,6,1
+75,Dakshina Kannada South PS,1,,1,6,1
+76,Dakshina Kannada East PS,1,,1,6,1
+77,Dakshina Kannada West PS,1,,1,6,1
+78,Dakshina Kannada PS,1,,1,6,1
+79,Dakshina Kannada Town PS,1,,1,6,1
+80,Tumakuru PS,1,,1,7,1
+81,Tumakuru Town PS,1,,1,7,1
+82,Tumakuru Rural PS,1,,1,7,1
+83,Tumakuru North PS,1,,1,7,1
+84,Tumakuru South PS,1,,1,7,1
+85,Tumakuru East PS,1,,1,7,1
+86,Tumakuru West PS,1,,1,7,1
+87,Shivamogga PS,1,,1,8,1
+88,Shivamogga Town PS,1,,1,8,1
+89,Shivamogga Rural PS,1,,1,8,1
+90,Shivamogga North PS,1,,1,8,1
+91,Shivamogga South PS,1,,1,8,1
+92,Shivamogga East PS,1,,1,8,1
+93,Shivamogga West PS,1,,1,8,1
+94,Dharwad PS,1,,1,9,1
+95,Dharwad Town PS,1,,1,9,1
+96,Dharwad Rural PS,1,,1,9,1
+97,Dharwad North PS,1,,1,9,1
+98,Dharwad South PS,1,,1,9,1
+99,Dharwad East PS,1,,1,9,1
+100,Dharwad West PS,1,,1,9,1
+101,Vijayapura PS,1,,1,10,1
+102,Vijayapura Town PS,1,,1,10,1
+103,Vijayapura Rural PS,1,,1,10,1
+104,Vijayapura North PS,1,,1,10,1
+105,Vijayapura South PS,1,,1,10,1
+106,Vijayapura East PS,1,,1,10,1
+107,Vijayapura West PS,1,,1,10,1
+108,Ballari PS,1,,1,11,1
+109,Ballari Town PS,1,,1,11,1
+110,Ballari Rural PS,1,,1,11,1
+111,Ballari North PS,1,,1,11,1
+112,Ballari South PS,1,,1,11,1
+113,Ballari East PS,1,,1,11,1
+114,Ballari West PS,1,,1,11,1
+115,Raichur PS,1,,1,12,1
+116,Raichur Town PS,1,,1,12,1
+117,Raichur Rural PS,1,,1,12,1
+118,Raichur North PS,1,,1,12,1
+119,Raichur South PS,1,,1,12,1
+120,Hassan PS,1,,1,13,1
+121,Hassan Town PS,1,,1,13,1
+122,Hassan Rural PS,1,,1,13,1
+123,Hassan North PS,1,,1,13,1
+124,Hassan South PS,1,,1,13,1
+125,Mandya PS,1,,1,14,1
+126,Mandya Town PS,1,,1,14,1
+127,Mandya Rural PS,1,,1,14,1
+128,Mandya North PS,1,,1,14,1
+129,Mandya South PS,1,,1,14,1
+130,Udupi PS,1,,1,15,1
+131,Udupi Town PS,1,,1,15,1
+132,Udupi Rural PS,1,,1,15,1
+133,Udupi North PS,1,,1,15,1
+134,Udupi South PS,1,,1,15,1
+135,Uttara Kannada PS,1,,1,16,1
+136,Uttara Kannada Town PS,1,,1,16,1
+137,Uttara Kannada Rural PS,1,,1,16,1
+138,Chikkamagaluru PS,1,,1,17,1
+139,Chikkamagaluru Town PS,1,,1,17,1
+140,Chikkamagaluru Rural PS,1,,1,17,1
+141,Kodagu PS,1,,1,18,1
+142,Kodagu Town PS,1,,1,18,1
+143,Kodagu Rural PS,1,,1,18,1
+144,Chitradurga PS,1,,1,19,1
+145,Chitradurga Town PS,1,,1,19,1
+146,Chitradurga Rural PS,1,,1,19,1
+147,Davangere PS,1,,1,20,1
+148,Davangere Town PS,1,,1,20,1
+149,Davangere Rural PS,1,,1,20,1
+150,Davangere North PS,1,,1,20,1
+151,Davangere South PS,1,,1,20,1
+152,Gadag PS,1,,1,21,1
+153,Gadag Town PS,1,,1,21,1
+154,Gadag Rural PS,1,,1,21,1
+155,Haveri PS,1,,1,22,1
+156,Haveri Town PS,1,,1,22,1
+157,Haveri Rural PS,1,,1,22,1
+158,Koppal PS,1,,1,23,1
+159,Koppal Town PS,1,,1,23,1
+160,Koppal Rural PS,1,,1,23,1
+161,Bagalkote PS,1,,1,24,1
+162,Bagalkote Town PS,1,,1,24,1
+163,Bagalkote Rural PS,1,,1,24,1
+164,Chamarajanagara PS,1,,1,25,1
+165,Chamarajanagara Town PS,1,,1,25,1
+166,Chamarajanagara Rural PS,1,,1,25,1
+167,Chikkaballapura PS,1,,1,26,1
+168,Chikkaballapura Town PS,1,,1,26,1
+169,Chikkaballapura Rural PS,1,,1,26,1
+170,Kolar PS,1,,1,27,1
+171,Kolar Town PS,1,,1,27,1
+172,Kolar Rural PS,1,,1,27,1
+173,Ramanagara PS,1,,1,28,1
+174,Ramanagara Town PS,1,,1,28,1
+175,Ramanagara Rural PS,1,,1,28,1
+176,Yadgir PS,1,,1,29,1
+177,Yadgir Town PS,1,,1,29,1
+178,Yadgir Rural PS,1,,1,29,1
+179,Vijayanagara PS,1,,1,30,1
+180,Vijayanagara Town PS,1,,1,30,1
+181,Vijayanagara Rural PS,1,,1,30,1
+182,Bidar PS,1,,1,31,1
+183,Bidar Town PS,1,,1,31,1
+184,Bidar Rural PS,1,,1,31,1

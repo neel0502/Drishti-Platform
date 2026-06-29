@@ -18,4 +18,4 @@ generate_data.py
 # Generated Synthetic Data (Do not push large datasets by default)
 # Note: If you WANT to share the 15MB of generated data on GitHub, 
 # you can comment out the next line by adding a '#' in front of it.
-output/
+#output/
