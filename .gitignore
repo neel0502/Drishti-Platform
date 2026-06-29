@@ -1,0 +1,21 @@
+# Python temporary files and cache
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Micromamba / Virtual Environment (Do not push)
+env/
+Library/
+info/
+micromamba.tar.bz2
+
+# Temporary scripts created for data generation
+download_geojson.py
+download_geojson2.py
+extract_and_run.py
+generate_data.py
+
+# Generated Synthetic Data (Do not push large datasets by default)
+# Note: If you WANT to share the 15MB of generated data on GitHub, 
+# you can comment out the next line by adding a '#' in front of it.
+output/
