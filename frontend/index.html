@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Drishti — Karnataka State Police Intelligence Platform</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <!-- Vis Network CSS (Embedded in JS bundle, we just need the lib) -->
+  <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="index.css">
+</head>
+<body>
+
+  <!-- APP SHELL -->
+  <div class="app-shell">
+    
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sidebar-top">
+        <div class="logo-area">
+          <svg class="shield-icon" viewBox="0 0 24 24" width="24" height="24">
+            <path fill="currentColor" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <path fill="#0D1117" d="M12 4.2l6 2.25v5.55c0 4.2-4.27 7.24-6 8-1.73-.76-6-3.8-6-8V6.45l6-2.25z"/>
+            <circle cx="12" cy="11" r="3" fill="currentColor"/>
+          </svg>
+          <span class="logo-text">DRISHTI</span>
+        </div>
+        <div class="sub-logo">Karnataka State Police</div>
+      </div>
+      
+      <nav class="nav-links">
+        <a href="#" class="nav-link active" data-target="home">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+          Home
+        </a>
+        <a href="#" class="nav-link" data-target="map">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48v15.12c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5zM15 19l-6-2.11V5l6 2.11V19z"/></svg>
+          Crime Map
+        </a>
+        <a href="#" class="nav-link" data-target="search">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+          Search & Investigate
+        </a>
+        <a href="#" class="nav-link" data-target="profile">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+          Intelligence Profiles
+        </a>
+        <a href="#" class="nav-link" data-target="networks">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+          Crime Networks
+        </a>
+        <a href="#" class="nav-link" data-target="alerts" id="alerts-nav-link">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+          Situations
+          <span class="nav-badge">3</span>
+        </a>
+        <a href="#" class="nav-link" data-target="drilldown">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v-2H7v-2h7V9H7V7h7V5h5v12h-5z"/></svg>
+          District Drill-Down
+        </a>
+      </nav>
+      
+      <div class="sidebar-bottom">
+        <div class="officer-profile">
+          <div class="avatar">RS</div>
+          <div class="officer-info">
+            <div class="officer-name">DGP R. Sharma</div>
+            <div class="officer-title">State Police Chief</div>
+          </div>
+          <button class="logout-btn" title="Logout">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M10.09 15.59L11.5 17l5-5-5-5-1.41 1.41L12.67 11H3v2h9.67l-2.58 2.59zM19 3H5c-1.11 0-2 .9-2 2v4h2V5h14v14H5v-4H3v4c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/></svg>
+          </button>
+        </div>
+      </div>
+    </aside>
+    
+    <!-- MAIN CONTENT AREA -->
+    <main class="main-content">
+      
+      <!-- HEADER -->
+      <header class="app-header">
+        <div class="header-left">
+          <h1 id="header-greeting">Good morning, DGP Sharma</h1>
+        </div>
+        <div class="header-center">
+          <div class="global-search-bar">
+            <svg class="search-icon" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+            <input type="text" id="global-search-input" placeholder="Search by name, phone, vehicle, case number...">
+          </div>
+        </div>
+        <div class="header-right">
+          <span class="header-date" id="current-header-date">Mon 29 Jun 2026</span>
+          <div class="status-indicator">
+            <span class="pulse-dot green"></span>
+            <span class="status-text">SCRB Secure Link</span>
+          </div>
+        </div>
+      </header>
+      
+      <!-- PANELS CONTAINER -->
+      <div class="panels-container">
+        
+        <!-- PANEL: HOME (COMMAND CENTRE) -->
+        <section class="content-panel active" id="home-panel">
+          <!-- Morning Brief Card -->
+          <div class="brief-card">
+            <h2 class="brief-label">Morning Intelligence Briefing</h2>
+            <p class="brief-text" id="dashboard-brief">Loading morning briefing summaries...</p>
+            <div class="brief-subtext">Auto-generated · Updated today 6:00 AM</div>
+          </div>
+          
+          <!-- KPI Row -->
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <div class="kpi-label">Crimes Registered</div>
+              <div class="kpi-value" id="kpi-crimes">--</div>
+              <div class="kpi-delta red" id="kpi-crimes-delta">--</div>
+              <div class="sparkline-wrapper">
+                <canvas id="crimes-sparkline" height="30"></canvas>
+              </div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">Cases Resolved</div>
+              <div class="kpi-value" id="kpi-solved">--</div>
+              <div class="kpi-delta green" id="kpi-solved-rate">--</div>
+              <div class="kpi-subtext" id="kpi-solved-comparison">--</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">Arrests Logged</div>
+              <div class="kpi-value" id="kpi-arrests">--</div>
+              <div class="kpi-subtext" id="kpi-arrests-subtext">--</div>
+            </div>
+            <div class="kpi-card highlight-border">
+              <div class="kpi-label">Alert Districts</div>
+              <div class="kpi-value text-red" id="kpi-alert-districts">--</div>
+              <div class="kpi-subtext" id="kpi-alert-names">--</div>
+              <span class="status-pill red-pill" style="margin-top: 8px; display: inline-block;">Action Required</span>
+            </div>
+          </div>
+          
+          <!-- Two Columns: Map and Attention Feed -->
+          <div class="columns-grid">
+            <!-- Left: Karnataka Crime Density Map -->
+            <div class="grid-col col-60">
+              <div class="panel-card map-card-container">
+                <div class="card-header">
+                  <h3>State Crime Intensity Map</h3>
+                  <span class="header-muted-label">Click a district for deep details</span>
+                </div>
+                <div id="dashboard-map" class="small-map-canvas"></div>
+              </div>
+            </div>
+            <!-- Right: What Needs Attention -->
+            <div class="grid-col col-40">
+              <div class="panel-card">
+                <div class="card-header">
+                  <h3>Emerging Spikes & Watches</h3>
+                </div>
+                <div class="attention-feed" id="dashboard-attention-feed">
+                  <!-- Injected via JS -->
+                  <div class="loading-spinner">Loading situations...</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Bottom Row: Crime Trends Chart -->
+          <div class="panel-card" style="margin-top: 20px;">
+            <div class="card-header">
+              <h3>24-Month Crime Trend Timeline</h3>
+              <span class="header-muted-label">Note seasonal peak indicators</span>
+            </div>
+            <div class="chart-container">
+              <canvas id="trend-chart-canvas"></canvas>
+            </div>
+          </div>
+        </section>
+        
+        <!-- PANEL: CRIME MAP -->
+        <section class="content-panel" id="map-panel">
+          <div class="map-controls-floating">
+            <div class="filter-group">
+              <select id="map-filter-category" class="filter-select">
+                <option value="">All Crime Categories</option>
+                <option value="1">Crimes Against Body</option>
+                <option value="2">Crimes Against Property</option>
+                <option value="3">Crimes Against Women</option>
+                <option value="4">Economic Offences</option>
+                <option value="6">Cyber Crimes</option>
+                <option value="7">Drug Offences (NDPS)</option>
+              </select>
+              <select id="map-filter-district" class="filter-select">
+                <option value="">All Karnataka</option>
+                <!-- Injected dynamically -->
+              </select>
+            </div>
+            <div class="floating-badge-area">
+              <button class="alert-pulse-badge" id="btn-floating-situations">
+                <span class="badge-dot red-pulse"></span>
+                <span id="floating-badge-text">3 Situations Active</span>
+              </button>
+            </div>
+          </div>
+          
+          <!-- Full screen map container -->
+          <div class="full-map-wrapper">
+            <div id="main-crime-map" class="full-map-canvas"></div>
+            
+            <!-- Floating Alert Card Top-Right -->
+            <div class="map-floating-alert-card" id="map-alert-card">
+              <div class="floating-alert-header">
+                <span class="alert-pill urgent-pill">URGENT</span>
+                <button class="close-alert-btn" id="btn-close-map-alert">×</button>
+              </div>
+              <h4 id="map-alert-title">Unusual Activity — Raichur</h4>
+              <p id="map-alert-desc">Kidnappings this week are 6× higher than normal. 3 cases in 48 hours.</p>
+              <div class="floating-alert-actions">
+                <button class="btn btn-primary btn-sm" id="btn-map-alert-investigate">Investigate</button>
+                <button class="btn btn-secondary btn-sm" id="btn-map-alert-dismiss">Dismiss</button>
+              </div>
+            </div>
+            
+            <!-- Bottom Time-of-Day Slider -->
+            <div class="map-time-slider-panel">
+              <div class="slider-header-info">
+                <span class="slider-title">What time do crimes happen?</span>
+                <span class="slider-current-value" id="slider-time-label">8:00 PM — Evening Peak</span>
+              </div>
+              <div class="slider-row">
+                <button class="play-btn" id="btn-play-slider">
+                  <!-- Play SVG -->
+                  <svg viewBox="0 0 24 24" width="20" height="20" id="play-icon"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+                  <!-- Pause SVG -->
+                  <svg viewBox="0 0 24 24" width="20" height="20" id="pause-icon" style="display:none;"><path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                </button>
+                <input type="range" id="time-of-day-slider" min="0" max="23" value="20" class="time-slider">
+              </div>
+              <p class="slider-context-text" id="slider-context-desc">Most chain snatching incidents happen between 6 PM and 9 PM near transport nodes.</p>
+            </div>
+          </div>
+        </section>
+        
+        <!-- PANEL: SEARCH & INVESTIGATE -->
+        <section class="content-panel" id="search-panel">
+          <div class="search-hero">
+            <h2>Intelligence Query Engine</h2>
+            <p class="hero-sub">Type a suspect's name, phone, getaway vehicle, or case ID to link incidents instantly</p>
+            <div class="search-chips">
+              <span class="search-chip" onclick="fillSearch('Kiran Kumar')">Person: Kiran Kumar</span>
+              <span class="search-chip" onclick="fillSearch('98450-12345')">Phone: 98450-12345</span>
+              <span class="search-chip" onclick="fillSearch('KA-05 MX 1234')">Vehicle: KA-05 MX 1234</span>
+              <span class="search-chip" onclick="fillSearch('202450000')">Case ID Prefix: 202450</span>
+            </div>
+          </div>
+          
+          <div id="search-results-area" style="display:none;">
+            <!-- Column layouts for different entity hits -->
+            <div class="search-sections">
+              <!-- People Section -->
+              <div class="search-result-section" id="section-people">
+                <h3>Linked Suspect Profiles</h3>
+                <div class="grid-container" id="grid-people"></div>
+              </div>
+              
+              <!-- Phones Section -->
+              <div class="search-result-section" id="section-phones">
+                <h3>Phone Number Intelligence</h3>
+                <div class="grid-container" id="grid-phones"></div>
+              </div>
+              
+              <!-- Vehicles Section -->
+              <div class="search-result-section" id="section-vehicles">
+                <h3>Vehicle Registration Audits</h3>
+                <div class="grid-container" id="grid-vehicles"></div>
+              </div>
+              
+              <!-- Cases Section -->
+              <div class="search-result-section" id="section-cases">
+                <h3>Associated Cases & FIRs</h3>
+                <div class="cases-table-wrapper">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>FIR No</th>
+                        <th>Registered Date</th>
+                        <th>Category</th>
+                        <th>District</th>
+                        <th>Status</th>
+                        <th>Summary Facts</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="table-cases-body"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        
+        <!-- PANEL: INTELLIGENCE PROFILE -->
+        <section class="content-panel" id="profile-panel">
+          <div class="profile-header-area">
+            <div class="profile-title-row">
+              <h2 id="profile-name">Kiran Kumar</h2>
+              <span class="status-pill red-pill large" id="profile-risk-pill">HIGH RISK OFFENDER</span>
+              <span class="status-pill border-pill large" id="profile-status-pill">AT LARGE</span>
+            </div>
+            <div class="profile-alias" id="profile-alias">alias Drill Kiran, Kiran Naik</div>
+            <div class="profile-meta-subtitle" id="profile-demographics">Age 34 · Male · From Dharwad · Last seen Belagavi Nov 2024</div>
+          </div>
+          
+          <div class="columns-grid" style="margin-top: 20px;">
+            <!-- Left Column: Details Cards -->
+            <div class="grid-col col-40">
+              <!-- Known Identifiers -->
+              <div class="panel-card" style="margin-bottom: 20px;">
+                <div class="card-header">
+                  <h3>Known System Identifiers</h3>
+                </div>
+                <div class="details-list">
+                  <div class="details-item">
+                    <span class="detail-label">Aadhaar (Masked)</span>
+                    <span class="detail-value text-mono" id="prof-aadhaar">•••• •••• 3421</span>
+                  </div>
+                  <div class="details-item">
+                    <span class="detail-label">Mobile Registers</span>
+                    <span class="detail-value" id="prof-phones">98450-12345 · 8 cases</span>
+                  </div>
+                  <div class="details-item">
+                    <span class="detail-label">Registered Addresses</span>
+                    <span class="detail-value" id="prof-address">Dharwad permanent address</span>
+                  </div>
+                  <div class="details-item">
+                    <span class="detail-label">Linked Vehicles</span>
+                    <span class="detail-value text-mono" id="prof-vehicle">KA-05 MX 1234 (Black Pulsar)</span>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Family & Connections -->
+              <div class="panel-card" style="margin-bottom: 20px;">
+                <div class="card-header">
+                  <h3>Family & Criminal Network</h3>
+                </div>
+                <div class="details-list">
+                  <div class="details-item">
+                    <span class="detail-label">Father</span>
+                    <span class="detail-value" id="prof-father">Kumar Naik — no criminal record</span>
+                  </div>
+                  <div class="details-item">
+                    <span class="detail-label">Brother</span>
+                    <span class="detail-value text-red" id="prof-brother">Suresh Naik (2 NDPS cases)</span>
+                  </div>
+                  <div class="details-item">
+                    <span class="detail-label">Frequent Associates</span>
+                    <div id="prof-associates-list" style="margin-top: 8px;">
+                      <!-- JS generated chips -->
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- How They Operate (MO) -->
+              <div class="panel-card">
+                <div class="card-header">
+                  <h3>Modus Operandi (MO) Pattern</h3>
+                </div>
+                <p class="mo-paragraph" id="prof-mo-desc">Breaks into locked houses between midnight and 4 AM using a hand drill on front door locks. Targets homes when owners are travelling. Works in a group of 3.</p>
+                <div class="mo-badge-alert">
+                  <span class="alert-icon">⚠️</span>
+                  <span id="prof-mo-match-text">Identical MO detected in 60 cases across 3 districts.</span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Right Column: Maps, Timelines & Graphs -->
+            <div class="grid-col col-60">
+              <!-- Movement Map -->
+              <div class="panel-card" style="margin-bottom: 20px;">
+                <div class="card-header">
+                  <h3>Geographic Movement & Jurisdictions</h3>
+                  <span class="header-muted-label">Timeline path of registered offences</span>
+                </div>
+                <div id="profile-movement-map" class="profile-map-canvas"></div>
+              </div>
+              
+              <!-- Case Timeline -->
+              <div class="panel-card">
+                <div class="card-header">
+                  <h3>Case Registration History</h3>
+                </div>
+                <div class="timeline-wrapper" id="profile-timeline">
+                  <!-- Vertical timeline blocks injected via JS -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        
+        <!-- PANEL: CRIME NETWORKS -->
+        <section class="content-panel" id="networks-panel">
+          <div class="columns-grid">
+            <!-- Left Side: Gang Directory -->
+            <div class="grid-col col-30">
+              <div class="panel-card">
+                <div class="card-header">
+                  <h3>Detected Syndicates</h3>
+                  <span class="header-muted-label">Groups linked by phone/vehicle sharing</span>
+                </div>
+                <div class="network-groups-list" id="networks-groups-feed">
+                  <!-- Injected via JS -->
+                </div>
+              </div>
+            </div>
+            
+            <!-- Right Side: Node Network Visualizer -->
+            <div class="grid-col col-70">
+              <div class="panel-card network-visualizer-card">
+                <div class="card-header">
+                  <h3 id="network-title">Drill & Enter Syndicate Graph</h3>
+                  <span class="header-muted-label">Interactive network nodes: drag, zoom, and select</span>
+                </div>
+                <div class="network-explanatory-header" id="network-explanation">
+                  3 suspects are linked to 60 burglaries across Bangalore, Mysuru, and Belagavi. Text analysis matches their locks-drilling Modus Operandi. They shared a phone and a getaway vehicle.
+                </div>
+                <div id="network-graph-canvas" class="network-canvas"></div>
+                <div class="network-footer-legend">
+                  <div class="legend-item"><span class="legend-dot" style="background:#F85149;"></span>Accused (At Large)</div>
+                  <div class="legend-item"><span class="legend-dot" style="background:#D29922;"></span>Accused (Custody)</div>
+                  <div class="legend-item"><span class="legend-dot" style="background:#58A6FF;"></span>Shared Property (Phone/Bike)</div>
+                  <div class="legend-item"><span class="legend-dot" style="background:#8B949E;"></span>District Cluster</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        
+        <!-- PANEL: SITUATIONS (ALERTS FEED) -->
+        <section class="content-panel" id="alerts-panel">
+          <div class="columns-grid">
+            <!-- Left Panel: Feed -->
+            <div class="grid-col col-40">
+              <div class="panel-card" style="height: calc(100vh - 120px); overflow-y: auto;">
+                <div class="card-header">
+                  <h3>Situations Needing Attention</h3>
+                  <span class="header-muted-label">Auto-detected anomalies and watches</span>
+                </div>
+                <div class="alerts-feed-wrapper" id="situations-list-feed">
+                  <!-- Injected via JS -->
+                </div>
+              </div>
+            </div>
+            
+            <!-- Right Panel: Selection details -->
+            <div class="grid-col col-60">
+              <div class="panel-card" style="height: calc(100vh - 120px); overflow-y: auto;" id="situation-detail-container">
+                <!-- Injected via JS -->
+                <div class="empty-state-detail">
+                  <svg viewBox="0 0 24 24" width="48" height="48" fill="#484F58"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+                  <p>Select a situation on the left to see the intelligence summary and recommend actions.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        
+        <!-- PANEL: DISTRICT DRILL DOWN -->
+        <section class="content-panel" id="drilldown-panel">
+          <div class="drilldown-header-card">
+            <div class="drilldown-title-row">
+              <h2 id="district-drill-title">Mysuru District Analysis</h2>
+              <div class="filter-group">
+                <select id="select-drilldown-district" class="filter-select filter-select-border">
+                  <!-- Injected districts dynamically -->
+                </select>
+              </div>
+            </div>
+            <p class="mo-paragraph" id="district-brief-summary">Mysuru had 847 crimes this month. This is 12% more than last month, but still below the state average for a district this size.</p>
+          </div>
+          
+          <div class="columns-grid" style="margin-top: 20px;">
+            <!-- Left 70%: Station Performance Table -->
+            <div class="grid-col col-70">
+              <div class="panel-card">
+                <div class="card-header">
+                  <h3>Police Station Performance Breakdown</h3>
+                  <span class="header-muted-label">Workload vs Resolution metrics</span>
+                </div>
+                <div class="cases-table-wrapper">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>Police Station</th>
+                        <th style="text-align:right;">Registered Cases</th>
+                        <th>Resolved Cases (%)</th>
+                        <th style="text-align:right;">Pending Cases</th>
+                        <th>Operational Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="table-stations-body">
+                      <!-- Injected via JS -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Right 30%: Top district offenders -->
+            <div class="grid-col col-30">
+              <div class="panel-card">
+                <div class="card-header">
+                  <h3>Top Offenders in District</h3>
+                </div>
+                <div class="details-list" id="district-offenders-list">
+                  <!-- Injected via JS -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        
+      </div>
+      
+    </main>
+  </div>
+
+  <!-- Global scripts variables mapping -->
+  <script>
+    // helper global search function
+    function fillSearch(val) {
+      document.getElementById('global-search-input').value = val;
+      // Trigger search event
+      const event = new Event('input', { bubbles: true });
+      document.getElementById('global-search-input').dispatchEvent(event);
+      
+      // Navigate to search panel
+      document.querySelector('a[data-target="search"]').click();
+    }
+  </script>
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <!-- Application logic -->
+  <script src="index.js"></script>
+</body>
+</html>
