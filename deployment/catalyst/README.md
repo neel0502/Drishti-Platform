@@ -1,5 +1,7 @@
 # Deploy Drishti to Zoho Catalyst AppSail
 
+Verified development URL: https://drishtiksp-50044050051.development.catalystappsail.in
+
 AppSail must launch the FastAPI service on the port supplied through `X_ZOHO_CATALYST_LISTEN_PORT`. Drishti already supports that contract.
 
 ## Recommended: Catalyst-managed Python runtime
@@ -17,12 +19,12 @@ AppSail must launch the FastAPI service on the port supplied through `X_ZOHO_CAT
    catalyst init
    ```
 
-3. Select **AppSail**, **Catalyst-Managed Runtime**, and a supported Python runtime (Python 3.11 is recommended). Use the repository root as the build path.
+3. Select **AppSail**, **Catalyst-Managed Runtime**, and Python 3.11. The committed configuration uses `.appsail-build` as the deployable build path.
 
-4. Set the startup command generated in `app-config.json` to:
+4. The committed `app-config.json` runs `scripts/build_appsail.sh` before deployment. The script creates a clean bundle and installs Linux AMD64 Python wheels so native analytics dependencies are compatible with AppSail. Its startup command is:
 
    ```text
-   sh -c 'uvicorn backend.app:app --host 0.0.0.0 --port ${X_ZOHO_CATALYST_LISTEN_PORT}'
+   sh -c 'python3 -m uvicorn backend.app:app --host 0.0.0.0 --port ${X_ZOHO_CATALYST_LISTEN_PORT}'
    ```
 
 5. Deploy and verify:

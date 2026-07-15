@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import pandas as pd
 import numpy as np
 import networkx as nx
@@ -11,6 +12,7 @@ import os
 import json
 import random
 from datetime import datetime, timedelta
+from threading import Event, Thread
 
 # Create FastAPI app
 app = FastAPI(title="Drishti Intelligence API")
@@ -47,6 +49,8 @@ vectorizer = TfidfVectorizer(stop_words='english')
 tfidf_matrix = None
 case_ids_list = []
 G = nx.Graph()
+analytics_ready = Event()
+analytics_error = None
 
 
 @app.get("/api/health", tags=["operations"])
@@ -55,8 +59,27 @@ def health_check():
     return {
         "status": "ok",
         "service": "drishti-intelligence-api",
-        "dataLoaded": df_case is not None,
+        "dataLoaded": analytics_ready.is_set(),
+        "initializationError": analytics_error,
     }
+
+
+@app.middleware("http")
+async def analytics_readiness_guard(request, call_next):
+    """Keep the service reachable while the analytics indexes initialize."""
+    if request.url.path.startswith("/api/") and request.url.path != "/api/health":
+        if analytics_error:
+            return JSONResponse(
+                status_code=500,
+                content={"detail": "Analytics initialization failed", "error": analytics_error},
+            )
+        if not analytics_ready.is_set():
+            return JSONResponse(
+                status_code=503,
+                headers={"Retry-After": "10"},
+                content={"detail": "Analytics are initializing. Please retry shortly."},
+            )
+    return await call_next(request)
 
 # Injected Pattern Case Lists
 pattern_a_case_ids = []
@@ -247,9 +270,18 @@ def find_similar_cases(case_id, top_n=5):
 
 @app.on_event("startup")
 def startup_event():
-    load_data()
-    build_network_graph()
-    build_nlp_index()
+    def initialize_analytics():
+        global analytics_error
+        try:
+            load_data()
+            build_network_graph()
+            build_nlp_index()
+            analytics_ready.set()
+        except Exception as exc:
+            analytics_error = str(exc)
+            print(f"[ERROR] Analytics initialization failed: {exc}")
+
+    Thread(target=initialize_analytics, name="analytics-initializer", daemon=True).start()
 
 # ─── API ENDPOINTS ────────────────────────────────────────────────────────
 

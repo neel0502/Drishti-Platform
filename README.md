@@ -68,6 +68,8 @@ Open [http://127.0.0.1:9000](http://127.0.0.1:9000).
 
 Deployment instructions and the required AppSail configuration are in [deployment/catalyst/README.md](deployment/catalyst/README.md).
 
+Live development deployment: https://drishtiksp-50044050051.development.catalystappsail.in
+
 ## Repository guide
 
 - `backend/app.py` — FastAPI service and analytics

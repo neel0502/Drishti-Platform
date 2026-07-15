@@ -27,7 +27,7 @@ generate_data.py
 .catalystrc
 .env
 .env.*
-
+.appsail-build/
 
 
 

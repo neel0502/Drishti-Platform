@@ -1,0 +1,10 @@
+{
+	"command": "sh -c 'python3 -m uvicorn backend.app:app --host 0.0.0.0 --port ${X_ZOHO_CATALYST_LISTEN_PORT}'",
+	"build_path": "./.appsail-build",
+	"stack": "python_3_11",
+	"env_variables": {},
+	"memory": 1024,
+	"scripts": {
+		"predeploy": "./scripts/build_appsail.sh"
+	}
+}
