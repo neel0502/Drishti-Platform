@@ -15,6 +15,8 @@ It turns synthetic SCRB-style records into a state-level command dashboard, geog
 - Network and link analysis for connected offenders and cases
 - Situation alerts for unusual activity
 - District drill-down for station and offender summaries
+- Explainable FIR-to-FIR links with narrative, co-accused, phone, and vehicle evidence
+- Computed 12-month district/category anomaly baselines
 
 ## Architecture
 
@@ -48,6 +50,8 @@ python run.py
 ```
 
 Open [http://127.0.0.1:8000](http://127.0.0.1:8000). The API health endpoint is `/api/health`.
+
+Run the analytics regression suite with `pytest -q` after installing `requirements-dev.txt`.
 
 For a production-style local start:
 

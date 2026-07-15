@@ -410,11 +410,7 @@ function updateIncidentMarkers() {
     
     // Filter logic
     if (incHour !== selectedHour) return;
-    if (catFilter && inc.category !== parseInt(catFilter)) {
-      // mapping category if backend sends IDs. In our case we filter category by type match:
-      const catText = getCategoryText(catFilter);
-      if (!inc.type.toLowerCase().includes(catText.toLowerCase())) return;
-    }
+    if (catFilter && inc.categoryId !== parseInt(catFilter)) return;
     if (distFilter && inc.districtId !== parseInt(distFilter)) return;
     
     // Generate custom dot marker
@@ -519,8 +515,7 @@ function initMapFilters() {
   
   // Floating alert cards maps triggers
   document.getElementById("btn-map-alert-investigate").addEventListener("click", () => {
-    // Highlight Raichur in situations
-    loadAlertDetails("raichur-spike");
+    if (activeAlertsList.length > 0) loadAlertDetails(activeAlertsList[0].id);
     triggerNav("alerts");
   });
   
@@ -587,7 +582,7 @@ function renderSearchResults(data) {
       const card = document.createElement("div");
       card.className = "result-card";
       
-      const pills = p.pills.map(pill => `<span class="status-pill ${pill === 'HIGH RISK OFFENDER' ? 'red-pill' : 'amber-pill'}">${pill}</span>`).join("");
+      const pills = p.pills.map(pill => `<span class="status-pill ${pill.includes('PRIORITY') ? 'red-pill' : 'amber-pill'}">${pill}</span>`).join("");
       
       card.innerHTML = `
         <div class="result-card-header">
@@ -595,9 +590,9 @@ function renderSearchResults(data) {
             <div class="result-card-title">${p.name}</div>
             ${p.aliases ? `<div class="result-card-alias">alias: ${p.aliases}</div>` : ''}
           </div>
-          <span class="status-pill ${p.status === 'AT LARGE' ? 'red-pill' : 'blue-pill'}">${p.status}</span>
+          <span class="status-pill ${p.status === 'NO ARREST RECORD' ? 'amber-pill' : 'blue-pill'}">${p.status}</span>
         </div>
-        <div class="result-card-meta">Age ${p.age} · ${p.gender} · Last seen: ${p.status === 'AT LARGE' ? 'Belagavi' : 'In Custody'}</div>
+        <div class="result-card-meta">Age ${p.age} · ${p.gender} · Latest linked FIR: ${p.lastSeen}</div>
         <div class="result-pills-row">${pills}</div>
         <div class="result-details-grid">
           <div class="result-details-row">
@@ -719,9 +714,36 @@ function renderSearchResults(data) {
 }
 
 async function loadCaseMO(caseId) {
-  // Focus alerts and show links
-  loadAlertDetails("cross-district-mo");
-  triggerNav("alerts");
+  try {
+    const res = await fetch(`${API_BASE}/cases/${encodeURIComponent(caseId)}/links`);
+    if (!res.ok) throw new Error(`Case link request failed: ${res.status}`);
+    const data = await res.json();
+    const source = data.sourceCase;
+    const related = data.relatedCases;
+    const districts = [...new Set(related.map(item => item.district))];
+    const bestScore = related.length ? related[0].connectionScore : 0;
+    const dynamicAlert = {
+      id: `case-links-${source.caseId}`,
+      severity: bestScore >= 80 ? "urgent" : "watch",
+      title: `${related.length} explainable links for FIR ${source.crimeNo}`,
+      timeText: "Computed on demand · Explainable Case Linker",
+      description: `${related.length} related cases across ${districts.length} district(s); strongest connection score ${bestScore}/100.`,
+      whatHappened: `Drishti compared the FIR narrative and relational records against 50,460 indexed cases. Results are ranked using narrative similarity, shared accused, and shared identifiers.`,
+      cases: related,
+      evidence: related.slice(0, 5).map(item => ({
+        label: `${item.crimeNo} · ${item.district}`,
+        value: `${item.connectionScore}/100 — ${item.evidence.map(e => e.value).join("; ")}`
+      })),
+      recommendedAction: "Suggested response: Review the evidence for the highest-scoring links and validate the associated FIRs before merging or coordinating investigations."
+    };
+
+    activeAlertsList = [dynamicAlert, ...activeAlertsList.filter(item => item.id !== dynamicAlert.id)];
+    renderAlertsSidebarFeed(activeAlertsList);
+    triggerNav("alerts");
+    loadAlertDetails(dynamicAlert.id);
+  } catch (err) {
+    console.error("Unable to compute MO links:", err);
+  }
 }
 
 // ─── SCREEN 4: INTELLIGENCE PROFILES ──────────────────────────────────────
@@ -736,9 +758,12 @@ async function loadSuspectProfile(name) {
     document.getElementById("profile-demographics").textContent = `Age ${data.age} · ${data.gender} · From ${data.contactInfo.address.split(';')[0]} · Last seen: ${data.lastSeen}`;
     
     // Status badges
+    const riskPill = document.getElementById("profile-risk-pill");
+    riskPill.textContent = data.pills[0] || "SUSPECT PROFILE";
+    riskPill.className = `status-pill ${riskPill.textContent.includes('PRIORITY') ? 'red-pill' : 'amber-pill'} large`;
     const statusPill = document.getElementById("profile-status-pill");
     statusPill.textContent = data.status;
-    statusPill.className = `status-pill ${data.status === 'AT LARGE' ? 'red-pill' : 'blue-pill'} large`;
+    statusPill.className = `status-pill ${data.status === 'NO ARREST RECORD' ? 'amber-pill' : 'blue-pill'} large`;
     
     // Detail counts
     document.getElementById("prof-aadhaar").textContent = data.contactInfo.aadhaar;
@@ -844,6 +869,8 @@ async function fetchNetworkGroups() {
     const data = await res.json();
     
     renderNetworkGroupsSidebar(data.groups);
+    document.getElementById("network-title").textContent = `${data.groups[0].name} Network Link`;
+    document.getElementById("network-explanation").textContent = data.selectedGroup.explanation;
     renderNetworkCanvas(data.selectedGroup);
   } catch (err) {
     console.error("Error fetching network groups:", err);
@@ -970,6 +997,11 @@ async function fetchSituationsData() {
     
     activeAlertsList = data.alerts;
     renderAlertsSidebarFeed(data.alerts);
+    document.getElementById("floating-badge-text").textContent = `${data.alerts.length} Situations Active`;
+    if (data.alerts.length > 0) {
+      document.getElementById("map-alert-title").textContent = data.alerts[0].title;
+      document.getElementById("map-alert-desc").textContent = data.alerts[0].description;
+    }
     
     // Auto load first alert details
     if (data.alerts.length > 0) {
@@ -984,9 +1016,9 @@ function renderAlertsSidebarFeed(alerts) {
   const container = document.getElementById("situations-list-feed");
   container.innerHTML = "";
   
-  alerts.forEach(alert => {
+  alerts.forEach((alert, index) => {
     const card = document.createElement("div");
-    card.className = `alert-feed-card ${alert.severity} ${alert.id === 'raichur-spike' ? 'active' : ''}`;
+    card.className = `alert-feed-card ${alert.severity} ${index === 0 ? 'active' : ''}`;
     card.id = `alert-card-${alert.id}`;
     
     card.innerHTML = `
@@ -1032,6 +1064,11 @@ function loadAlertDetails(alertId) {
     <div class="alert-side-cases" id="alert-detail-cases">
       <!-- Injected cases -->
     </div>
+
+    <div class="panel-card" id="alert-evidence-panel" style="margin-bottom:20px; padding:14px;">
+      <h4 style="font-size:11px; text-transform:uppercase; color:var(--text-muted); margin-bottom:10px;">Why Drishti flagged this</h4>
+      <div id="alert-evidence-list" class="details-list"></div>
+    </div>
     
     <!-- Mini Map -->
     <div class="panel-card" style="margin-bottom: 20px; padding: 12px;">
@@ -1066,6 +1103,19 @@ function loadAlertDetails(alertId) {
     });
   } else {
     casesBox.style.display = "none";
+  }
+
+  const evidencePanel = document.getElementById("alert-evidence-panel");
+  const evidenceList = document.getElementById("alert-evidence-list");
+  if (alert.evidence && alert.evidence.length > 0) {
+    alert.evidence.forEach(item => {
+      const row = document.createElement("div");
+      row.className = "details-item";
+      row.innerHTML = `<span class="details-label">${item.label}</span><span class="details-value">${item.value}</span>`;
+      evidenceList.appendChild(row);
+    });
+  } else {
+    evidencePanel.style.display = "none";
   }
   
   // 2. Render Map coordinates for these alerts
@@ -1179,9 +1229,9 @@ async function loadDistrictDrilldown(districtId) {
     // Header summary
     document.getElementById("district-drill-title").textContent = `${data.districtName} District Analysis`;
     document.getElementById("district-brief-summary").innerHTML = `
-      <strong>${data.districtName}</strong> logged a total of <strong>${data.casesCount}</strong> incidents in our system. 
-      Crime indices register a status of <strong>${data.percentageIncrease}</strong>. 
-      The primary Modus Operandi category active in this jurisdiction is <strong>${data.topCrimeType}</strong>.
+      <strong>${data.districtName}</strong> logged <strong>${data.periodCasesCount}</strong> incidents in ${data.analysisPeriod}
+      (<strong>${data.percentageIncrease}</strong>). Across the full dataset, ${data.casesCount} incidents are linked to this district.
+      The most frequent current category is <strong>${data.topCrimeType}</strong>.
     `;
     
     // Select dropdown matching state
@@ -1219,7 +1269,7 @@ async function loadDistrictDrilldown(districtId) {
         <span class="off-name" style="cursor:pointer; color:var(--accent-blue-lt);" onclick="loadSuspectProfile('${off.name.replace(/'/g, "\\'")}')">${off.name}</span>
         <div style="text-align:right;">
           <span class="off-count">${off.cases} Cases</span><br/>
-          <span class="status-pill ${off.status === 'AT LARGE' ? 'red-pill' : 'blue-pill'}" style="font-size:8px; margin-top:2px;">${off.status}</span>
+          <span class="status-pill ${off.status === 'NO ARREST RECORD' ? 'amber-pill' : 'blue-pill'}" style="font-size:8px; margin-top:2px;">${off.status}</span>
         </div>
       `;
       offendersList.appendChild(row);

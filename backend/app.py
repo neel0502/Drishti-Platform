@@ -10,8 +10,6 @@ from sklearn.metrics.pairwise import cosine_similarity
 import re
 import os
 import json
-import random
-from datetime import datetime, timedelta
 from threading import Event, Thread
 
 # Create FastAPI app
@@ -140,6 +138,15 @@ def random_vehicle_suffix(i):
     num = (1000 + i * 17) % 9000 + 1000
     return f"{letters} {num}"
 
+
+PHONE_PATTERN = re.compile(r"(?<!\d)(?:\+91[\s-]?)?([6-9]\d{4}[\s-]?\d{5})(?!\d)")
+VEHICLE_PATTERN = re.compile(r"\b(KA[\s-]?\d{2}[\s-]?[A-Z]{1,2}[\s-]?\d{4})\b", re.IGNORECASE)
+
+
+def extract_first_identifier(text, pattern, formatter):
+    match = pattern.search(str(text))
+    return formatter(match.group(1)) if match else None
+
 def load_data():
     global df_case, df_accused, df_victim, df_complainant, df_arrest, df_chargesheet
     global df_district, df_unit, df_crime_head, df_crime_subhead, df_status, df_occupation
@@ -182,9 +189,21 @@ def load_data():
         (df_case['BriefFacts'].str.contains("phishing|Diwali", case=False, na=False))
     ]['CaseMasterID'].tolist()
 
-    # Enrich DataFrames with vehicle and phone columns
-    df_case['phone'] = None
-    df_case['vehicle'] = None
+    # Extract identifiers directly from narrative text when present.
+    df_case['phone'] = df_case['BriefFacts'].apply(
+        lambda text: extract_first_identifier(
+            text,
+            PHONE_PATTERN,
+            lambda value: re.sub(r"\D", "", value)[-10:-5] + "-" + re.sub(r"\D", "", value)[-5:],
+        )
+    )
+    df_case['vehicle'] = df_case['BriefFacts'].apply(
+        lambda text: extract_first_identifier(
+            text,
+            VEHICLE_PATTERN,
+            lambda value: re.sub(r"[\s-]+", " ", value.upper()).replace("KA ", "KA-", 1),
+        )
+    )
     
     # Pattern B Burglaries: Set Phone & Vehicle
     df_case.loc[df_case['CaseMasterID'].isin(pattern_b_case_ids), 'phone'] = "98450-12345"
@@ -268,6 +287,149 @@ def find_similar_cases(case_id, top_n=5):
             break
     return results
 
+
+def get_complete_analysis_periods():
+    """Return the latest two complete months represented by the dataset."""
+    periods = pd.to_datetime(df_case['CrimeRegisteredDate']).dt.to_period('M')
+    latest_complete = periods.max() - 1
+    return latest_complete, latest_complete - 1
+
+
+def get_case_links(case_id, top_n=8):
+    """Build explainable cross-case links from narrative and relational evidence."""
+    try:
+        case_id = int(case_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid case identifier")
+
+    source_rows = df_case[df_case['CaseMasterID'] == case_id]
+    if source_rows.empty:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    source = source_rows.iloc[0]
+    source_accused = set(
+        df_accused[df_accused['CaseMasterID'] == case_id]['AccusedName'].dropna().tolist()
+    )
+    source_phone = clean_val(source.get('phone'))
+    source_vehicle = clean_val(source.get('vehicle'))
+    links = []
+
+    for candidate in find_similar_cases(case_id, top_n=max(top_n * 4, 20)):
+        candidate_id = candidate['caseId']
+        candidate_row = df_case[df_case['CaseMasterID'] == candidate_id].iloc[0]
+        candidate_accused = set(
+            df_accused[df_accused['CaseMasterID'] == candidate_id]['AccusedName'].dropna().tolist()
+        )
+        shared_accused = sorted(source_accused.intersection(candidate_accused))
+        shared_phone = bool(source_phone and source_phone == clean_val(candidate_row.get('phone')))
+        shared_vehicle = bool(source_vehicle and source_vehicle == clean_val(candidate_row.get('vehicle')))
+
+        narrative_score = round(candidate['similarity'] * 70)
+        accused_score = min(20, len(shared_accused) * 10)
+        identifier_score = (5 if shared_phone else 0) + (5 if shared_vehicle else 0)
+        connection_score = min(100, narrative_score + accused_score + identifier_score)
+
+        evidence = [
+            {
+                "type": "MO narrative",
+                "value": f"{candidate['similarity'] * 100:.1f}% text similarity",
+                "weight": narrative_score,
+            }
+        ]
+        if shared_accused:
+            evidence.append({
+                "type": "Co-accused",
+                "value": ", ".join(shared_accused),
+                "weight": accused_score,
+            })
+        if shared_phone:
+            evidence.append({"type": "Shared phone", "value": source_phone, "weight": 5})
+        if shared_vehicle:
+            evidence.append({"type": "Shared vehicle", "value": source_vehicle, "weight": 5})
+
+        links.append({
+            **candidate,
+            "id": candidate_id,
+            "facts": candidate['briefFacts'],
+            "lat": float(candidate_row['latitude']),
+            "lng": float(candidate_row['longitude']),
+            "crimeType": str(candidate_row['_SubheadName']),
+            "connectionScore": connection_score,
+            "evidence": evidence,
+        })
+
+    links.sort(key=lambda item: (item['connectionScore'], item['similarity']), reverse=True)
+    links = links[:top_n]
+    return {
+        "sourceCase": {
+            "caseId": case_id,
+            "crimeNo": str(source['CrimeNo']),
+            "crimeType": str(source['_SubheadName']),
+            "district": get_district_name(source['_DistrictID']),
+            "date": str(source['CrimeRegisteredDate']),
+            "briefFacts": str(source['BriefFacts']),
+        },
+        "relatedCases": links,
+        "method": {
+            "name": "Explainable Case Linker",
+            "threshold": "TF-IDF cosine similarity >= 35%",
+            "scoring": "70% narrative + 20% co-accused + 10% shared identifiers",
+        },
+    }
+
+
+def compute_monthly_anomalies(limit=5):
+    """Detect district/crime-type spikes against the preceding 12 complete months."""
+    latest_period, _ = get_complete_analysis_periods()
+    working = df_case.copy()
+    working['_period'] = pd.to_datetime(working['CrimeRegisteredDate']).dt.to_period('M')
+    baseline_start = latest_period - 12
+    grouped = working.groupby(['_DistrictID', '_SubheadName', '_period']).size()
+    anomalies = []
+
+    for (district_id, crime_type), series in grouped.groupby(level=[0, 1]):
+        monthly = series.droplevel([0, 1])
+        current_count = int(monthly.get(latest_period, 0))
+        baseline = monthly[(monthly >= 0) & (monthly.index >= baseline_start) & (monthly.index < latest_period)]
+        baseline_values = baseline.reindex(pd.period_range(baseline_start, latest_period - 1, freq='M'), fill_value=0)
+        mean = float(baseline_values.mean())
+        std = float(baseline_values.std(ddof=0))
+        if current_count < 5 or mean < 1:
+            continue
+        z_score = (current_count - mean) / std if std > 0 else 0.0
+        ratio = current_count / mean
+        if z_score < 1.5 and ratio < 1.5:
+            continue
+
+        matching = working[
+            (working['_DistrictID'] == district_id)
+            & (working['_SubheadName'] == crime_type)
+            & (working['_period'] == latest_period)
+        ].sort_values('CrimeRegisteredDate', ascending=False).head(3)
+        cases = [{
+            "id": int(row['CaseMasterID']),
+            "crimeNo": str(row['CrimeNo']),
+            "date": str(row['CrimeRegisteredDate']),
+            "facts": str(row['BriefFacts']),
+            "lat": float(row['latitude']),
+            "lng": float(row['longitude']),
+        } for _, row in matching.iterrows()]
+
+        anomalies.append({
+            "districtId": int(district_id),
+            "district": get_district_name(district_id),
+            "crimeType": str(crime_type),
+            "period": str(latest_period),
+            "count": current_count,
+            "baselineMean": round(mean, 1),
+            "zScore": round(z_score, 2),
+            "ratio": round(ratio, 2),
+            "cases": cases,
+        })
+
+    anomalies.sort(key=lambda item: (item['zScore'], item['ratio']), reverse=True)
+    return anomalies[:limit]
+
 @app.on_event("startup")
 def startup_event():
     def initialize_analytics():
@@ -287,13 +449,10 @@ def startup_event():
 
 @app.get("/api/dashboard")
 def get_dashboard():
-    # Since dataset is historical, set "current" simulation date to end of dataset
-    max_date_str = df_case['CrimeRegisteredDate'].max()
-    current_date = datetime.strptime(max_date_str, "%Y-%m-%d")
-    
-    # Crimes this month (Dec 2024)
-    latest_ym = "2024-12"
-    prev_ym = "2024-11"
+    latest_period, previous_period = get_complete_analysis_periods()
+    case_periods = pd.to_datetime(df_case['CrimeRegisteredDate']).dt.to_period('M')
+    latest_ym = str(latest_period)
+    prev_ym = str(previous_period)
     
     cases_this_month = int((df_case['CrimeRegisteredDate'].astype(str).str.startswith(latest_ym)).sum())
     cases_prev_month = int((df_case['CrimeRegisteredDate'].astype(str).str.startswith(prev_ym)).sum())
@@ -309,61 +468,53 @@ def get_dashboard():
     # Arrests
     arrests_count = int(len(df_arrest))
     
-    # Districts Needing Attention
-    # Spikes: Bangalore Urban (Pattern A), Raichur (Kidnapping), Kolar
+    anomalies = compute_monthly_anomalies(limit=3)
+    attention_names = [item['district'] for item in anomalies]
     attention_districts = {
-        "value": 3,
-        "districts": "Bangalore Urban · Raichur · Kolar",
+        "value": len(attention_names),
+        "districts": " · ".join(attention_names) if attention_names else "No statistical spikes",
         "label": "Action Required"
     }
     
-    # Alerts Summary
-    alerts = [
-        {
-            "id": "raichur-kidnap",
-            "severity": "urgent",
-            "title": "Unusual spike in Raichur",
-            "description": "3 kidnappings in 2 days — 6× higher than normal",
-            "link": "alerts"
-        },
-        {
-            "id": "kiran-kumar-active",
-            "severity": "watch",
-            "title": "Repeat offender active — Bangalore",
-            "description": "Kiran Kumar linked to 14 burglaries, last seen Belagavi",
-            "link": "profiles"
-        },
-        {
-            "id": "burglary-syndicate",
-            "severity": "watch",
-            "title": "Same break-in method — 3 districts",
-            "description": "5 burglaries likely by same group — same drill MO",
-            "link": "networks"
-        }
-    ]
+    alerts = [{
+        "id": f"computed-spike-{index}",
+        "severity": "urgent" if item['zScore'] >= 3 else "watch",
+        "title": f"{item['crimeType']} spike — {item['district']}",
+        "description": f"{item['count']} cases · {item['ratio']}× the 12-month baseline",
+        "link": "alerts",
+    } for index, item in enumerate(anomalies)]
     
     # Monthly counts for 24 months (2023-01 to 2024-12)
     df_case['ym'] = df_case['CrimeRegisteredDate'].astype(str).str.slice(0, 7)
     trend_data = df_case[df_case['ym'] >= "2023-01"].groupby('ym').size().sort_index()
     
+    recent_months = pd.period_range(latest_period - 5, latest_period, freq='M')
+    sparkline = [int((case_periods == period).sum()) for period in recent_months]
+    top_attention = ", ".join(attention_names[:2]) if attention_names else "no districts"
+    heinous_case_ids = set(df_case[df_case['GravityOffenceID'] == 1]['CaseMasterID'])
+    heinous_arrests = int(df_arrest['CaseMasterID'].isin(heinous_case_ids).sum())
+
     return {
-        "morningBrief": f"Karnataka recorded 847 crimes yesterday. Bangalore Urban and Raichur require immediate attention today.",
+        "morningBrief": (
+            f"Karnataka recorded {cases_this_month:,} crimes in {latest_ym}. "
+            f"The strongest statistical signals are in {top_attention}."
+        ),
         "kpi": {
             "crimesThisMonth": {
                 "value": cases_this_month,
                 "delta": delta_text,
                 "deltaColor": delta_color,
-                "sparkline": [11200, 11800, 11500, 12100, cases_prev_month, cases_this_month]
+                "sparkline": sparkline
             },
             "casesSolved": {
                 "value": resolved_count,
                 "rate": f"{resolution_rate}% resolution rate",
-                "comparison": "Better than last year (52%)",
+                "comparison": "Calculated across the full available case history",
                 "comparisonColor": "green"
             },
             "arrestsMade": {
                 "value": arrests_count,
-                "subtext": f"{int(len(df_arrest[df_arrest['ArrestSurrenderDate'].astype(str).str.startswith('2024-12')]))} this month · 234 heinous crime arrests"
+                "subtext": f"{int(len(df_arrest[df_arrest['ArrestSurrenderDate'].astype(str).str.startswith(latest_ym)]))} in {latest_ym} · {heinous_arrests:,} heinous-case arrests"
             },
             "attentionDistricts": attention_districts
         },
@@ -399,6 +550,11 @@ def get_map_data(
     # Crimes per district
     district_crimes = filtered.groupby('_DistrictID').size().to_dict()
     district_names = df_district.set_index('DistrictID')['DistrictName'].to_dict()
+    latest_period, previous_period = get_complete_analysis_periods()
+    all_periods = pd.to_datetime(df_case['CrimeRegisteredDate']).dt.to_period('M')
+    latest_district_counts = df_case[all_periods == latest_period].groupby('_DistrictID').size().to_dict()
+    previous_district_counts = df_case[all_periods == previous_period].groupby('_DistrictID').size().to_dict()
+    anomaly_districts = {item['districtId'] for item in compute_monthly_anomalies(limit=5)}
     
     # Enrich GeoJSON properties
     for feature in geojson_data['features']:
@@ -414,11 +570,14 @@ def get_map_data(
                 break
                 
         c_count = district_crimes.get(matched_id, 0) if matched_id else 0
+        latest_count = latest_district_counts.get(matched_id, 0) if matched_id else 0
+        previous_count = previous_district_counts.get(matched_id, 0) if matched_id else 0
+        delta_percent = round((latest_count - previous_count) / previous_count * 100) if previous_count else 0
         props['crimeCount'] = int(c_count)
         props['districtId'] = int(matched_id) if matched_id else None
         props['districtName'] = district_names.get(matched_id, dist_name)
-        props['trend'] = "+12% spike" if matched_id in [1, 12] else "Stable"
-        props['pulsing'] = True if matched_id in [1, 12, 27] else False  # Bangalore, Raichur, Kolar
+        props['trend'] = f"{delta_percent:+d}% vs {previous_period}"
+        props['pulsing'] = matched_id in anomaly_districts
         
     # Get representative incidents
     # Return latest cases + all of Pattern A (Chain Snatching Indiranagar) and Pattern B (Burglary)
@@ -436,6 +595,7 @@ def get_map_data(
             "date": str(r['CrimeRegisteredDate']),
             "time": str(r['IncidentFromDate']),
             "type": str(r['_SubheadName']),
+            "categoryId": int(r['CrimeMajorHeadID']),
             "facts": str(r['BriefFacts']),
             "districtId": int(r['_DistrictID'])
         })
@@ -464,25 +624,30 @@ def search_investigate(q: str = Query(..., min_length=2)):
     # 1. Search Phone Numbers
     if "98450" in q or "12345" in q:
         phone_cases = df_case[df_case['phone'] == "98450-12345"]
+        phone_case_ids = set(phone_cases['CaseMasterID'].tolist())
+        phone_people = df_accused[df_accused['CaseMasterID'].isin(phone_case_ids)]['AccusedName'].value_counts()
+        phone_districts = [get_district_name(value) for value in phone_cases['_DistrictID'].unique()]
         results["phones"].append({
             "number": "📱 +91 98450 12345",
             "caseCount": len(phone_cases),
-            "owner": "Ramesh Naik (per FIR records)",
-            "districts": "Bangalore Urban · Mysuru · Belagavi",
-            "warning": "⚠️ Appears under 3 different names — possible shared gang phone",
+            "owner": str(phone_people.index[0]) if len(phone_people) else "No linked accused",
+            "districts": " · ".join(phone_districts),
+            "warning": f"⚠️ Linked to {len(phone_people)} accused names across {len(phone_districts)} districts",
             "cases": clean_list(phone_cases[['CaseMasterID', 'CrimeNo', 'CrimeRegisteredDate', '_SubheadName']].rename(columns={'_SubheadName': 'type'}).to_dict(orient='records'))
         })
         
     # 2. Search Vehicles
     if "ka-05" in q or "mx" in q or "1234" in q or "pulsar" in q:
         vehicle_cases = df_case[df_case['vehicle'] == "KA-05 MX 1234"]
+        vehicle_districts = [get_district_name(value) for value in vehicle_cases['_DistrictID'].unique()]
+        vehicle_crimes = vehicle_cases['_SubheadName'].value_counts()
         results["vehicles"].append({
             "plate": "🏍️ KA-05 MX 1234",
-            "description": "Black Bajaj Pulsar",
+            "description": "Vehicle identifier linked from FIR enrichment",
             "caseCount": len(vehicle_cases),
-            "crimeType": "Chain Snatching & House Burglary",
-            "pattern": "Consistent pattern: Indiranagar area evening hours (6-9 PM) & Burglary Syndicate co-accused",
-            "warning": "⚠️ Linked to 6 snatching incidents & 60 break-ins",
+            "crimeType": ", ".join(vehicle_crimes.head(3).index.tolist()),
+            "pattern": f"Observed across {len(vehicle_districts)} districts: {', '.join(vehicle_districts)}",
+            "warning": f"⚠️ Linked to {len(vehicle_cases)} FIR records; validate ownership before action",
             "cases": clean_list(vehicle_cases[['CaseMasterID', 'CrimeNo', 'CrimeRegisteredDate', '_SubheadName']].rename(columns={'_SubheadName': 'type'}).to_dict(orient='records'))
         })
 
@@ -502,13 +667,17 @@ def search_investigate(q: str = Query(..., min_length=2)):
     unique_names.sort(key=rank_name)
     
     for name in unique_names[:10]:
-        acc_cases = df_accused[df_accused['AccusedName'] == name]['CaseMasterID'].tolist()
+        person_rows = df_accused[df_accused['AccusedName'] == name]
+        acc_cases = person_rows['CaseMasterID'].tolist()
         case_rows = df_case[df_case['CaseMasterID'].isin(acc_cases)]
-        
-        is_high_risk = "Kiran Kumar" in name or "Ramesh Naik" in name or "Syed Ahmed" in name
-        pills = ["HIGH RISK OFFENDER"] if is_high_risk else ["Suspect"]
+        district_count = int(case_rows['_DistrictID'].nunique())
+        is_priority = len(acc_cases) >= 10 and district_count >= 2
+        pills = ["HIGH LINKAGE PRIORITY"] if is_priority else ["Suspect"]
         if len(acc_cases) > 3:
             pills.append("Repeat Offender")
+        accused_master_ids = set(person_rows['AccusedMasterID'].astype(int).tolist())
+        has_arrest_record = df_arrest['AccusedMasterID'].isin(accused_master_ids).any()
+        latest_case = case_rows.sort_values('CrimeRegisteredDate', ascending=False).iloc[0]
             
         districts_seen = [get_district_name(d) for d in case_rows['_DistrictID'].unique()]
         
@@ -521,14 +690,15 @@ def search_investigate(q: str = Query(..., min_length=2)):
                     
         results["people"].append({
             "name": name,
-            "aliases": "Drill Kiran, Kiran Naik" if "Kiran Kumar" in name else "Night Ramesh" if "Ramesh" in name else "Tool Syed" if "Syed" in name else None,
+            "aliases": name.split(" alias ", 1)[1] if " alias " in name else None,
             "age": int(matched_accused[matched_accused['AccusedName'] == name]['AgeYear'].iloc[0]),
             "gender": str(matched_accused[matched_accused['AccusedName'] == name]['GenderID'].iloc[0]),
-            "status": "AT LARGE" if is_high_risk else "In Custody",
+            "status": "ARREST RECORDED" if has_arrest_record else "NO ARREST RECORD",
+            "lastSeen": f"{get_district_name(latest_case['_DistrictID'])}, {latest_case['CrimeRegisteredDate']}",
             "pills": pills,
             "caseCount": len(acc_cases),
             "districts": " · ".join(districts_seen),
-            "crimeType": "House Burglary" if "Kiran" in name or "Ramesh" in name else "Chain Snatching" if "Raju" in name else "Assault",
+            "crimeType": str(case_rows['_SubheadName'].mode().iloc[0]) if not case_rows.empty else "Unknown",
             "associates": associates
         })
 
@@ -564,6 +734,11 @@ def search_investigate(q: str = Query(..., min_length=2)):
         
     return results
 
+
+@app.get("/api/cases/{case_id}/links")
+def get_explainable_case_links(case_id: int, limit: int = Query(8, ge=1, le=20)):
+    return get_case_links(case_id, top_n=limit)
+
 @app.get("/api/profile/{name}")
 def get_suspect_profile(name: str):
     name_clean = name.strip()
@@ -580,18 +755,19 @@ def get_suspect_profile(name: str):
     case_ids = df_accused[df_accused['AccusedName'] == matched_name]['CaseMasterID'].tolist()
     case_rows = df_case[df_case['CaseMasterID'].isin(case_ids)].sort_values('CrimeRegisteredDate', ascending=False)
     
-    is_pattern_b = matched_name in ["Kiran Kumar alias Drill Kiran", "Ramesh Naik alias Night Ramesh", "Syed Ahmed alias Tool Syed"]
-    
     age = int(acc_rows['AgeYear'].iloc[0])
     gender = str(acc_rows['GenderID'].iloc[0])
-    
-    phone = "98450-12345 (8 cases) · 76543-21098 (3 cases)" if is_pattern_b else "No phone records registered"
-    vehicle = "KA-05 MX 1234 (Black Pulsar)" if is_pattern_b or "Raju" in matched_name else "No vehicle registered"
-    aadhaar = "•••• •••• 3421" if is_pattern_b else "•••• •••• " + str(random.randint(1000, 9999))
-    
-    mo_desc = "Breaks into locked houses between midnight and 4 AM using a hand drill on front door locks. Targets homes when owners are travelling. Works in a group of 3." if is_pattern_b else "Snatches gold ornaments from lone walkers in evening hours, operating on a two-wheeler getaway vehicle."
-    
-    brother = "Suresh Naik — 2 NDPS cases" if is_pattern_b else "No direct criminal family records"
+    phone_values = case_rows['phone'].dropna().value_counts()
+    vehicle_values = case_rows['vehicle'].dropna().value_counts()
+    phone = " · ".join(f"{value} ({count} cases)" for value, count in phone_values.items()) or "No phone identifier in linked records"
+    vehicle = " · ".join(f"{value} ({count} cases)" for value, count in vehicle_values.items()) or "No vehicle identifier in linked records"
+    aadhaar = "Not supplied in challenge schema"
+    most_common_fact = case_rows['BriefFacts'].value_counts().index[0] if not case_rows.empty else "No narrative available"
+    mo_desc = f"Most repeated case narrative across linked FIRs: {most_common_fact}"
+    accused_master_ids = set(acc_rows['AccusedMasterID'].astype(int).tolist())
+    has_arrest_record = df_arrest['AccusedMasterID'].isin(accused_master_ids).any()
+    district_count = int(case_rows['_DistrictID'].nunique())
+    latest_case = case_rows.iloc[0]
     associates = []
     if matched_name in G:
         for neighbor in G.neighbors(matched_name):
@@ -624,21 +800,21 @@ def get_suspect_profile(name: str):
         
     return {
         "name": matched_name,
-        "alias": "Drill Kiran" if "Kiran" in matched_name else "Night Ramesh" if "Ramesh" in matched_name else "Tool Syed" if "Syed" in matched_name else "Suspect Profile",
-        "pills": ["HIGH RISK OFFENDER", "Repeat Offender"] if is_pattern_b else ["Repeat Offender"],
+        "alias": matched_name.split(" alias ", 1)[1] if " alias " in matched_name else None,
+        "pills": (["HIGH LINKAGE PRIORITY"] if len(case_ids) >= 10 and district_count >= 2 else []) + (["Repeat Offender"] if len(case_ids) > 3 else []),
         "age": age,
         "gender": gender,
-        "lastSeen": "Belagavi, November 2024" if is_pattern_b else "Bangalore Urban, December 2024",
-        "status": "AT LARGE" if is_pattern_b else "In Custody",
+        "lastSeen": f"{get_district_name(latest_case['_DistrictID'])}, {latest_case['CrimeRegisteredDate']}",
+        "status": "ARREST RECORDED" if has_arrest_record else "NO ARREST RECORD",
         "contactInfo": {
             "aadhaar": aadhaar,
             "phone": phone,
             "vehicle": vehicle,
-            "address": "Dharwad permanent address; active across Bangalore, Mysuru, Belagavi" if is_pattern_b else "Bangalore Urban"
+            "address": f"Activity observed across {district_count} district(s); address not supplied in challenge schema"
         },
         "family": {
-            "father": "Kumar Naik — No criminal record",
-            "brother": brother,
+            "father": "Not supplied in challenge schema",
+            "brother": "Not supplied in challenge schema",
             "associates": associates
         },
         "moDescription": mo_desc,
@@ -646,8 +822,182 @@ def get_suspect_profile(name: str):
         "movement": movement_coordinates
     }
 
+def build_computed_crime_networks(group_name=None):
+    group_specs = [
+        {
+            "id": "drill-burglary-gang",
+            "name": "Drill & Enter Group",
+            "members": [
+                "Kiran Kumar alias Drill Kiran",
+                "Ramesh Naik alias Night Ramesh",
+                "Syed Ahmed alias Tool Syed",
+            ],
+            "case_ids": set(pattern_b_case_ids),
+        },
+        {
+            "id": "indiranagar-snatchers",
+            "name": "Indiranagar Chain Snatching Group",
+            "members": [
+                "Raju alias Splendor Raju",
+                "Manoj Kumar",
+                "Shiva alias Bike Shiva",
+            ],
+            "case_ids": set(pattern_a_case_ids),
+        },
+    ]
+
+    cyber_members = (
+        df_accused[df_accused['CaseMasterID'].isin(pattern_c_case_ids)]['AccusedName']
+        .value_counts().head(5).index.tolist()
+    )
+    group_specs.append({
+        "id": "cyber-fraud-ring",
+        "name": "Seasonal Cyber Fraud Cluster",
+        "members": cyber_members,
+        "case_ids": set(pattern_c_case_ids),
+    })
+
+    arrested_ids = set(df_arrest['AccusedMasterID'].dropna().astype(int).tolist())
+    groups = []
+    for spec in group_specs:
+        member_rows = df_accused[df_accused['AccusedName'].isin(spec['members'])]
+        related_case_ids = set(spec['case_ids']) or set(member_rows['CaseMasterID'].tolist())
+        related_cases = df_case[df_case['CaseMasterID'].isin(related_case_ids)]
+        arrested_members = 0
+        for member in spec['members']:
+            member_ids = set(
+                df_accused[df_accused['AccusedName'] == member]['AccusedMasterID'].astype(int).tolist()
+            )
+            if member_ids.intersection(arrested_ids):
+                arrested_members += 1
+        districts = [get_district_name(value) for value in related_cases['_DistrictID'].unique()]
+        groups.append({
+            "id": spec['id'],
+            "name": spec['name'],
+            "size": len(spec['members']),
+            "cases": len(related_case_ids),
+            "districts": ", ".join(districts[:4]),
+            "status": f"{arrested_members} with arrest records · {len(spec['members']) - arrested_members} without",
+        })
+
+    selected = next(
+        (spec for spec in group_specs if group_name in (spec['id'], spec['name'])),
+        group_specs[0],
+    )
+    members = selected['members']
+    member_rows = df_accused[df_accused['AccusedName'].isin(members)]
+    selected_case_ids = set(selected['case_ids']) or set(member_rows['CaseMasterID'].tolist())
+    selected_cases = df_case[df_case['CaseMasterID'].isin(selected_case_ids)]
+    nodes = []
+    edges = []
+
+    for member in members:
+        member_case_ids = set(
+            member_rows[member_rows['AccusedName'] == member]['CaseMasterID'].tolist()
+        ).intersection(selected_case_ids)
+        nodes.append({
+            "id": member,
+            "label": f"{member}\n({len(member_case_ids)} cases)",
+            "group": "suspect",
+            "size": min(40, 14 + len(member_case_ids)),
+            "color": "#F85149" if len(member_case_ids) >= 10 else "#D29922",
+            "title": f"Computed from {len(member_case_ids)} linked FIR records",
+        })
+
+    for index, source in enumerate(members):
+        for target in members[index + 1:]:
+            if G.has_edge(source, target):
+                weight = int(G[source][target]['weight'])
+                edges.append({
+                    "from": source,
+                    "to": target,
+                    "label": f"{weight} shared case{'s' if weight != 1 else ''}",
+                    "color": "#F85149",
+                    "width": min(6, 1 + weight / 3),
+                })
+
+    district_counts = selected_cases['_DistrictID'].value_counts().head(4)
+    for district_id, count in district_counts.items():
+        district_name = get_district_name(district_id)
+        district_node = f"district-{int(district_id)}"
+        nodes.append({
+            "id": district_node,
+            "label": f"{district_name}\n({int(count)} cases)",
+            "group": "district",
+            "size": min(25, 10 + int(count) / 5),
+            "color": "#8B949E",
+            "title": f"{int(count)} linked cases in {district_name}",
+        })
+        for member in members:
+            member_case_ids = set(
+                member_rows[member_rows['AccusedName'] == member]['CaseMasterID'].tolist()
+            ).intersection(selected_case_ids)
+            district_member_count = len(
+                df_case[
+                    df_case['CaseMasterID'].isin(member_case_ids)
+                    & (df_case['_DistrictID'] == district_id)
+                ]
+            )
+            if district_member_count:
+                edges.append({
+                    "from": member,
+                    "to": district_node,
+                    "label": f"{district_member_count} FIRs",
+                    "color": "#8B949E",
+                    "width": 1,
+                })
+
+    for field, icon, label in [('phone', '📱', 'phone'), ('vehicle', '🏍️', 'vehicle')]:
+        for value in selected_cases[field].dropna().unique()[:2]:
+            asset_id = f"{field}-{value}"
+            asset_cases = set(selected_cases[selected_cases[field] == value]['CaseMasterID'].tolist())
+            nodes.append({
+                "id": asset_id,
+                "label": f"{icon} {value}\n({len(asset_cases)} cases)",
+                "group": "asset",
+                "size": 18,
+                "color": "#58A6FF",
+                "title": f"Shared {label} found in {len(asset_cases)} case records",
+            })
+            for member in members:
+                member_case_ids = set(
+                    member_rows[member_rows['AccusedName'] == member]['CaseMasterID'].tolist()
+                ).intersection(selected_case_ids)
+                overlap = len(member_case_ids.intersection(asset_cases))
+                if overlap:
+                    edges.append({
+                        "from": member,
+                        "to": asset_id,
+                        "label": f"{overlap} linked FIRs",
+                        "color": "#388BFD",
+                        "width": 2,
+                    })
+
+    explanation = (
+        f"Computed from {len(selected_case_ids)} FIRs: {len(members)} people, "
+        f"{len(edges)} evidenced relationships, and {len(district_counts)} principal districts. "
+        "Every edge is backed by shared case, district, phone, or vehicle records."
+    )
+    return {
+        "groups": groups,
+        "selectedGroup": {
+            "explanation": explanation,
+            "nodes": nodes,
+            "edges": edges,
+            "evidence": {
+                "caseCount": len(selected_case_ids),
+                "relationshipCount": len(edges),
+                "source": "Accused, CaseMaster, ArrestSurrender and enriched identifiers",
+            },
+        },
+    }
+
+
 @app.get("/api/networks")
 def get_crime_networks(groupName: str = None):
+    return build_computed_crime_networks(groupName)
+
+    # Legacy prepared graph retained below for reference during migration.
     groups = [
         {
             "id": "drill-burglary-gang",
@@ -753,73 +1103,47 @@ def get_crime_networks(groupName: str = None):
 
 @app.get("/api/alerts")
 def get_situations():
-    # Fetch some representative cases from Raichur (district 12) for the detail panel
-    raichur_incidents = df_case[df_case['_DistrictID'] == 12].head(3)
-    raichur_cases = []
-    for _, r in raichur_incidents.iterrows():
-        raichur_cases.append({
-            "id": int(r['CaseMasterID']),
-            "crimeNo": str(r['CrimeNo']),
-            "date": str(r['CrimeRegisteredDate']),
-            "facts": str(r['BriefFacts']),
-            "lat": float(r['latitude']),
-            "lng": float(r['longitude'])
-        })
-        
-    return {
-        "alerts": [
+    alerts = []
+    for index, anomaly in enumerate(compute_monthly_anomalies(limit=5)):
+        severity = "urgent" if anomaly['zScore'] >= 3 else "watch"
+        increase_percent = round((anomaly['ratio'] - 1) * 100)
+        evidence = [
             {
-                "id": "raichur-spike",
-                "severity": "urgent",
-                "title": "Kidnapping spike in Raichur",
-                "timeText": "2 hours ago",
-                "description": "3 kidnapping incidents registered within the last 48 hours. This is 6 times higher than the monthly average of 1 case.",
-                "whatHappened": "Three kidnapping cases were registered in Raichur in the last 48 hours. Normally Raichur sees about 1 kidnapping per month. This week's count is 6 times higher than usual.",
-                "cases": raichur_cases,
-                "recommendedAction": "Suggested response: Deploy additional patrol units to Raichur North and Central zones. Issue lookout notice for suspects described in Case #RAI/26/0034."
+                "label": "Current complete month",
+                "value": f"{anomaly['count']} {anomaly['crimeType']} cases",
             },
             {
-                "id": "kiran-active",
-                "severity": "watch",
-                "title": "Known offender active again",
-                "timeText": "1 day ago",
-                "description": "Kiran Kumar was released on bail 3 months ago. 2 new burglaries matching his exact hand-drill method reported since.",
-                "whatHappened": "Suspect Kiran Kumar alias Drill Kiran was released on bail in Mysuru. Within 90 days, two new burglaries using the silent wooden lock hand-drill method have been reported, suggesting re-offending activity.",
-                "cases": [],
-                "recommendedAction": "Suggested response: Issue alert to local beats in Bangalore and Mysuru. Coordinate with bail verification officer."
+                "label": "Previous 12-month baseline",
+                "value": f"{anomaly['baselineMean']} cases/month",
             },
             {
-                "id": "cross-district-mo",
-                "severity": "watch",
-                "title": "Same break-in method — 5 cases, 3 districts",
-                "timeText": "3 days ago",
-                "description": "Burglaries matching the silent wooden hand-drill MO were logged in Bangalore and Belagavi. Highly likely a single group operating.",
-                "whatHappened": "The NLP linkage engine grouped 5 burglaries across Bangalore and Belagavi with a cosine similarity > 92% based on BriefFacts descriptions. This confirms the movement of the burglary syndicate.",
-                "cases": [],
-                "recommendedAction": "Suggested response: Merge investigations under SCRB central task force. Track vehicles active near targeted coordinate locations."
+                "label": "Statistical deviation",
+                "value": f"{anomaly['zScore']} standard deviations above baseline",
             },
-            {
-                "id": "diwali-fraud",
-                "severity": "watch",
-                "title": "Diwali season — online fraud rising",
-                "timeText": "Weekly update",
-                "description": "Cyber utility bill frauds are rising in urban districts. Historically peaks during the October festival season.",
-                "whatHappened": "A seasonal surge in cyber utility bill frauds has been detected, specifically targeting bank details of retired complainants via text links.",
-                "cases": [],
-                "recommendedAction": "Suggested response: Launch state-wide SMS awareness campaign targeting senior bank account holders. Monitor active IP gateways."
-            },
-            {
-                "id": "mysuru-improving",
-                "severity": "info",
-                "title": "Mysuru improving — crime down 18%",
-                "timeText": "Monthly summary",
-                "description": "Violent crime declining for 3 months straight in Mysuru District.",
-                "whatHappened": "Mysuru district has registered a steady 18% decline in violent body crimes over the last quarter, likely due to enhanced beat patrolling deployments.",
-                "cases": [],
-                "recommendedAction": "Suggested response: Maintain current beat officer deployments. Document best practices for translation to other districts."
-            }
         ]
-    }
+        alerts.append({
+            "id": f"computed-spike-{index}",
+            "severity": severity,
+            "title": f"{anomaly['crimeType']} spike — {anomaly['district']}",
+            "timeText": f"Computed from {anomaly['period']} records",
+            "description": (
+                f"{anomaly['count']} cases, {increase_percent}% above the preceding "
+                f"12-month baseline of {anomaly['baselineMean']}."
+            ),
+            "whatHappened": (
+                f"Drishti compared {anomaly['district']} {anomaly['crimeType']} volume "
+                f"for {anomaly['period']} against the previous 12 complete months. "
+                f"The observed volume is {anomaly['ratio']}× the baseline."
+            ),
+            "cases": anomaly['cases'],
+            "evidence": evidence,
+            "recommendedAction": (
+                f"Suggested response: Validate the linked FIRs, notify the {anomaly['district']} "
+                "district analyst, and review station-level deployment before operational action."
+            ),
+        })
+
+    return {"alerts": alerts, "method": "12-month district/category z-score baseline"}
 
 @app.get("/api/districts/{district_id}")
 def get_district_details(district_id: int):
@@ -859,18 +1183,40 @@ def get_district_details(district_id: int):
     district_accused_ids = df_accused[df_accused['CaseMasterID'].isin(dist_cases['CaseMasterID'])]['AccusedName'].value_counts()
     top_offenders = []
     for name, count in district_accused_ids.head(5).items():
-        is_at_large = name in ["Kiran Kumar alias Drill Kiran", "Ramesh Naik alias Night Ramesh", "Syed Ahmed alias Tool Syed", "Raju alias Splendor Raju", "Manoj Kumar", "Shiva alias Bike Shiva"]
+        person_ids = set(
+            df_accused[
+                (df_accused['AccusedName'] == name)
+                & (df_accused['CaseMasterID'].isin(dist_cases['CaseMasterID']))
+            ]['AccusedMasterID'].astype(int).tolist()
+        )
+        has_arrest_record = df_arrest['AccusedMasterID'].isin(person_ids).any()
         top_offenders.append({
             "name": name,
             "cases": int(count),
-            "status": "AT LARGE" if is_at_large else "In Custody"
+            "status": "ARREST RECORDED" if has_arrest_record else "NO ARREST RECORD"
         })
+
+    latest_period, previous_period = get_complete_analysis_periods()
+    district_periods = pd.to_datetime(dist_cases['CrimeRegisteredDate']).dt.to_period('M')
+    latest_cases = dist_cases[district_periods == latest_period]
+    previous_cases = dist_cases[district_periods == previous_period]
+    latest_count = len(latest_cases)
+    previous_count = len(previous_cases)
+    delta_percent = round((latest_count - previous_count) / previous_count * 100) if previous_count else 0
+    delta_prefix = "+" if delta_percent > 0 else ""
+    top_crime = (
+        str(latest_cases['_SubheadName'].value_counts().index[0])
+        if not latest_cases.empty
+        else "No recorded cases"
+    )
         
     return {
         "districtName": dist_name,
         "casesCount": len(dist_cases),
-        "percentageIncrease": "+12% vs last month" if district_id in [1, 12] else "-4% vs last month",
-        "topCrimeType": "House Burglary" if district_id == 3 else "Vehicle Theft" if district_id == 1 else "Simple Assault",
+        "analysisPeriod": str(latest_period),
+        "periodCasesCount": latest_count,
+        "percentageIncrease": f"{delta_prefix}{delta_percent}% vs {previous_period}",
+        "topCrimeType": top_crime,
         "stations": station_rows,
         "topOffenders": top_offenders
     }
