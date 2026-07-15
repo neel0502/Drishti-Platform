@@ -20,6 +20,13 @@ generate_data.py
 # you can comment out the next line by adding a '#' in front of it.
 #output/
 
+# Local environments and deployment credentials
+.venv/
+.pytest_cache/
+.DS_Store
+.catalystrc
+.env
+.env.*
 
 
 

@@ -25,19 +25,22 @@ def check_and_install_dependencies():
 
 def run():
     check_and_install_dependencies()
+    host = os.getenv("HOST", "127.0.0.1")
+    port = int(os.getenv("X_ZOHO_CATALYST_LISTEN_PORT", os.getenv("PORT", "8000")))
+    reload_enabled = os.getenv("DRISHTI_RELOAD", "true").lower() == "true"
     
     print("\n" + "="*50)
     print("  DRISHTI — KSP SCRB INTELLIGENCE PLATFORM")
     print("="*50)
     print("  Starting local server...")
-    print("  API Base Address:   http://127.0.0.1:8000/api")
-    print("  Web Portal Address: http://127.0.0.1:8000/")
+    print(f"  API Base Address:   http://{host}:{port}/api")
+    print(f"  Web Portal Address: http://{host}:{port}/")
     print("="*50 + "\n")
     
     import uvicorn
     # Start server
     # We use "backend.app:app" string style for uvicorn so reload works
-    uvicorn.run("backend.app:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("backend.app:app", host=host, port=port, reload=reload_enabled)
 
 if __name__ == "__main__":
     run()

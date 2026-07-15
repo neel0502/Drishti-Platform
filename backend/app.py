@@ -48,6 +48,16 @@ tfidf_matrix = None
 case_ids_list = []
 G = nx.Graph()
 
+
+@app.get("/api/health", tags=["operations"])
+def health_check():
+    """Lightweight readiness endpoint for local and AppSail health checks."""
+    return {
+        "status": "ok",
+        "service": "drishti-intelligence-api",
+        "dataLoaded": df_case is not None,
+    }
+
 # Injected Pattern Case Lists
 pattern_a_case_ids = []
 pattern_b_case_ids = []
