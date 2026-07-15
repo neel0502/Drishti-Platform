@@ -15,6 +15,8 @@ Drishti converts SCRB-style data into two connected experiences:
 1. A command-centre view that shows trends, geographic concentration, unusual situations, and districts needing attention.
 2. An investigation workspace that searches across cases and people, identifies related cases, builds offender profiles, and explains criminal-network links.
 
+The flagship investigation workflow reconstructs a selected incident on a restrained map timeline, separates recorded events from illustrative movement, reports missing evidence instead of fabricating links, ranks related FIRs through a multi-signal fusion score, and requires human review before district coordination.
+
 ## Users
 
 - DGP/IGP/Commissioner: statewide situation and resource priorities
@@ -29,6 +31,8 @@ Drishti converts SCRB-style data into two connected experiences:
 - TF-IDF similarity for related-case discovery
 - NetworkX graph analysis for connected offenders
 - District, case, offender, map, and alert views
+- Incident reconstruction timeline with explicit recorded/inferred provenance
+- Missing-evidence report and human-reviewed operational action log
 - Catalyst-ready health check and runtime-port support
 
 ## Differentiation

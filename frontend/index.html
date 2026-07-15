@@ -57,6 +57,10 @@
           <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
           Crime Networks
         </a>
+        <a href="#" class="nav-link" data-target="reconstruction">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2a10 10 0 1 0 10 10A10.01 10.01 0 0 0 12 2zm1 11h5v-2h-4V6h-2v7zM5.5 17.1A8 8 0 0 1 4 12H2a10 10 0 0 0 2 6z"/></svg>
+          Incident Reconstruction
+        </a>
         <a href="#" class="nav-link" data-target="alerts" id="alerts-nav-link">
           <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
           Situations
@@ -258,6 +262,7 @@
               <span class="search-chip" onclick="fillSearch('98450-12345')">Phone: 98450-12345</span>
               <span class="search-chip" onclick="fillSearch('KA-05 MX 1234')">Vehicle: KA-05 MX 1234</span>
               <span class="search-chip" onclick="fillSearch('202450000')">Case ID Prefix: 202450</span>
+              <span class="search-chip" onclick="fillSearch('100010001202450004')">Reconstruction Demo: 8:48 PM Snatching</span>
             </div>
           </div>
           
@@ -301,6 +306,57 @@
                     <tbody id="table-cases-body"></tbody>
                   </table>
                 </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- PANEL: INCIDENT RECONSTRUCTION -->
+        <section class="content-panel" id="reconstruction-panel">
+          <div class="reconstruction-header panel-card">
+            <div>
+              <div class="header-muted-label">Evidence-aware timeline</div>
+              <h2 id="reconstruction-title">Select an FIR to reconstruct the incident</h2>
+              <p id="reconstruction-summary" class="mo-paragraph">Recorded events and restrained inferences will appear here. Missing links are reported explicitly.</p>
+            </div>
+            <span class="status-pill border-pill large" id="reconstruction-completeness">NO CASE SELECTED</span>
+          </div>
+
+          <div class="reconstruction-grid">
+            <div class="panel-card reconstruction-map-card">
+              <div id="reconstruction-map" class="reconstruction-map"></div>
+              <div class="reconstruction-controls">
+                <button class="play-btn" id="reconstruction-play" aria-label="Play reconstruction timeline">
+                  <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+                </button>
+                <input type="range" id="reconstruction-slider" min="0" max="0" value="0" class="time-slider">
+                <div class="reconstruction-time" id="reconstruction-time">—</div>
+              </div>
+              <div class="reconstruction-event-card">
+                <div id="reconstruction-event-label">No reconstruction loaded</div>
+                <div id="reconstruction-event-source" class="header-muted-label">Recorded data uses solid markers; inferred movement uses dashed lines.</div>
+              </div>
+              <div class="reconstruction-legend">
+                <span><i class="legend-recorded"></i>Recorded</span>
+                <span><i class="legend-inferred"></i>Inferred—not evidence</span>
+              </div>
+            </div>
+
+            <div class="reconstruction-side">
+              <div class="panel-card">
+                <div class="card-header"><h3>Missing Evidence Links</h3></div>
+                <div id="reconstruction-missing-links" class="missing-links-list">
+                  <div class="empty-state-detail"><p>Choose “Reconstruct” from a case result.</p></div>
+                </div>
+              </div>
+              <div class="panel-card">
+                <div class="card-header"><h3>Operational Decision Support</h3></div>
+                <div id="reconstruction-decision"></div>
+                <div class="flex-actions-row reconstruction-actions">
+                  <button class="btn btn-secondary" id="btn-request-review" disabled>Request Analyst Review</button>
+                  <button class="btn btn-primary" id="btn-approve-coordination" disabled>Approve District Coordination</button>
+                </div>
+                <div id="reconstruction-audit-result" class="audit-result"></div>
               </div>
             </div>
           </div>

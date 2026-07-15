@@ -11,6 +11,10 @@ let mainMap = null;
 let profileMap = null;
 let networkInstance = null;
 let activeAlertsList = [];
+let reconstructionMap = null;
+let reconstructionLayer = null;
+let reconstructionData = null;
+let reconstructionInterval = null;
 
 // DOM Ready
 document.addEventListener("DOMContentLoaded", () => {
@@ -18,6 +22,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initMapFilters();
   initSearch();
   initDistrictDrilldown();
+  initReconstruction();
   
   // Catalyst can cold-start before the analytics data is ready. Wait for
   // readiness so the first page load populates without a manual refresh.
@@ -704,7 +709,12 @@ function renderSearchResults(data) {
         <td>${c.district}</td>
         <td><span class="status-pill ${c.status === 'Closed / Final Report' ? 'green-pill' : 'amber-pill'}">${c.status}</span></td>
         <td style="max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${c.facts}</td>
-        <td><button class="btn btn-secondary btn-sm" onclick="loadCaseMO('${c.id}')">Find MO Links</button></td>
+        <td>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button class="btn btn-secondary btn-sm" onclick="loadCaseMO('${c.id}')">Find MO Links</button>
+            <button class="btn btn-primary btn-sm" onclick="loadIncidentReconstruction('${c.id}')">Reconstruct</button>
+          </div>
+        </td>
       `;
       casesBody.appendChild(row);
     });
@@ -744,6 +754,167 @@ async function loadCaseMO(caseId) {
   } catch (err) {
     console.error("Unable to compute MO links:", err);
   }
+}
+
+// ─── SCREEN: INCIDENT RECONSTRUCTION ─────────────────────────────────────
+function initReconstruction() {
+  const slider = document.getElementById("reconstruction-slider");
+  const playButton = document.getElementById("reconstruction-play");
+  slider.addEventListener("input", () => renderReconstructionStep(parseInt(slider.value)));
+  playButton.addEventListener("click", toggleReconstructionPlayback);
+  document.getElementById("btn-request-review").addEventListener("click", () => submitOperationalAction(false));
+  document.getElementById("btn-approve-coordination").addEventListener("click", () => submitOperationalAction(true));
+}
+
+async function loadIncidentReconstruction(caseId) {
+  try {
+    const response = await fetch(`${API_BASE}/cases/${encodeURIComponent(caseId)}/reconstruction`);
+    if (!response.ok) throw new Error(`Reconstruction request failed: ${response.status}`);
+    reconstructionData = await response.json();
+    triggerNav("reconstruction");
+    renderReconstructionSummary();
+    initializeReconstructionMap();
+
+    const slider = document.getElementById("reconstruction-slider");
+    slider.min = 0;
+    slider.max = Math.max(0, reconstructionData.events.length - 1);
+    slider.value = 0;
+    renderReconstructionStep(0);
+  } catch (error) {
+    console.error("Unable to reconstruct incident:", error);
+  }
+}
+
+function initializeReconstructionMap() {
+  if (reconstructionMap) {
+    reconstructionMap.remove();
+    reconstructionMap = null;
+  }
+  const incident = reconstructionData.events.find(event => event.type === "incident") || reconstructionData.events[0];
+  reconstructionMap = L.map("reconstruction-map", {
+    center: [incident.lat, incident.lng],
+    zoom: 14,
+    zoomControl: true,
+    attributionControl: false
+  });
+  L.tileLayer(mapTilesUrl).addTo(reconstructionMap);
+  reconstructionLayer = L.layerGroup().addTo(reconstructionMap);
+
+  if (reconstructionData.routeCoordinates.length > 1) {
+    L.polyline(
+      reconstructionData.routeCoordinates.map(point => [point.lat, point.lng]),
+      { color: "#D29922", weight: 2, dashArray: "7 7", opacity: 0.75 }
+    ).addTo(reconstructionMap).bindTooltip("Illustrative route — exact movement evidence missing");
+  }
+}
+
+function renderReconstructionSummary() {
+  const currentCase = reconstructionData.case;
+  document.getElementById("reconstruction-title").textContent = `${currentCase.crimeType} · FIR ${currentCase.crimeNo}`;
+  document.getElementById("reconstruction-summary").textContent = currentCase.briefFacts;
+  const completeness = document.getElementById("reconstruction-completeness");
+  completeness.textContent = `${reconstructionData.dataCompleteness}% DATA COMPLETE`;
+  completeness.className = `status-pill ${reconstructionData.dataCompleteness >= 70 ? 'green-pill' : 'amber-pill'} large`;
+
+  const missingContainer = document.getElementById("reconstruction-missing-links");
+  missingContainer.innerHTML = "";
+  reconstructionData.missingLinks.forEach(link => {
+    const item = document.createElement("div");
+    item.className = `missing-link-item ${link.status}`;
+    item.innerHTML = `
+      <div class="missing-link-heading"><span>${link.field}</span><span class="status-pill ${link.status === 'conflict' ? 'red-pill' : 'amber-pill'}">${link.status}</span></div>
+      <div>${link.impact}</div>
+      <small>Next: ${link.nextStep}</small>
+    `;
+    missingContainer.appendChild(item);
+  });
+
+  const decision = reconstructionData.decisionSupport;
+  document.getElementById("reconstruction-decision").innerHTML = `
+    <div class="decision-score-row">
+      <span class="status-pill ${decision.priority === 'HIGH REVIEW' ? 'red-pill' : 'blue-pill'}">${decision.priority}</span>
+      <strong>Strongest case link: ${decision.strongestLinkScore}/100</strong>
+    </div>
+    <div class="header-muted-label" style="margin:10px 0;">Affected districts: ${decision.affectedDistricts.join(', ') || 'Current district only'}</div>
+    <ol class="decision-list">${decision.recommendedActions.map(action => `<li>${action}</li>`).join('')}</ol>
+    <div class="human-review-note">Human approval is mandatory before any operational action.</div>
+  `;
+  document.getElementById("btn-request-review").disabled = false;
+  document.getElementById("btn-approve-coordination").disabled = false;
+  document.getElementById("reconstruction-audit-result").textContent = "";
+}
+
+function renderReconstructionStep(index) {
+  if (!reconstructionData || !reconstructionLayer) return;
+  const events = reconstructionData.events;
+  const currentEvent = events[index];
+  reconstructionLayer.clearLayers();
+
+  events.slice(0, index + 1).forEach((event, eventIndex) => {
+    const marker = L.marker([event.lat, event.lng], {
+      icon: L.divIcon({
+        className: `reconstruction-marker ${event.confidence === 'inferred' ? 'inferred' : 'recorded'} ${eventIndex === index ? 'current' : ''}`,
+        html: `<span>${event.icon}</span>`,
+        iconSize: [30, 30],
+        iconAnchor: [15, 15]
+      })
+    }).addTo(reconstructionLayer);
+    marker.bindPopup(`<strong>${event.label}</strong><br>${formatReconstructionTime(event)}<br><small>${event.source}</small>`);
+  });
+
+  reconstructionMap.panTo([currentEvent.lat, currentEvent.lng]);
+  document.getElementById("reconstruction-time").textContent = formatReconstructionTime(currentEvent);
+  document.getElementById("reconstruction-event-label").textContent = `${currentEvent.icon} ${currentEvent.label}`;
+  document.getElementById("reconstruction-event-source").textContent = `${currentEvent.confidence.toUpperCase()} · ${currentEvent.source}`;
+}
+
+function formatReconstructionTime(event) {
+  if (event.displayTime) return event.displayTime;
+  return new Date(event.timestamp).toLocaleString("en-IN", {
+    day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit"
+  });
+}
+
+function toggleReconstructionPlayback() {
+  if (!reconstructionData) return;
+  const slider = document.getElementById("reconstruction-slider");
+  if (reconstructionInterval) {
+    clearInterval(reconstructionInterval);
+    reconstructionInterval = null;
+    return;
+  }
+  reconstructionInterval = setInterval(() => {
+    const next = parseInt(slider.value) + 1;
+    if (next > parseInt(slider.max)) {
+      clearInterval(reconstructionInterval);
+      reconstructionInterval = null;
+      return;
+    }
+    slider.value = next;
+    renderReconstructionStep(next);
+  }, 1400);
+}
+
+async function submitOperationalAction(approved) {
+  if (!reconstructionData) return;
+  const decision = reconstructionData.decisionSupport;
+  const payload = {
+    caseId: reconstructionData.case.caseId,
+    actionType: approved ? "district-coordination" : "analyst-review",
+    rationale: approved
+      ? `Coordinate evidence review across ${decision.affectedDistricts.join(', ') || reconstructionData.case.district}`
+      : `Validate ${reconstructionData.missingLinks.length} missing or partial evidence links`,
+    approved
+  };
+  const response = await fetch(`${API_BASE}/actions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const result = await response.json();
+  document.getElementById("reconstruction-audit-result").textContent = response.ok
+    ? `Audit #${result.actionId}: ${result.status} · ${result.timestamp}`
+    : `Action could not be recorded: ${result.detail || response.status}`;
 }
 
 // ─── SCREEN 4: INTELLIGENCE PROFILES ──────────────────────────────────────

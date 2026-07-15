@@ -12,17 +12,17 @@ Open the dashboard. Explain the statewide snapshot, trend, and districts requiri
 
 Open the crime map, filter by crime category and time, and select an affected district. Explain how this moves from a statewide alert to a specific operational area.
 
-## 1:15–1:50 — Investigate
+## 1:15–1:45 — Investigate and fuse links
 
-Search for the highlighted case or offender. Open the profile and related cases. Point out the evidence used for each proposed connection.
+Search FIR `100010001202450004`. Show the multi-signal related-case score and its narrative, accused, identifier, proximity, and time-of-day evidence.
 
-## 1:50–2:20 — Network intelligence
+## 1:45–2:20 — Reconstruct without fabricating
 
-Open the network view. Filter the graph and show how officers identify a repeat-offender group without manually joining records.
+Select **Reconstruct**. Move the timeline from the inferred vehicle approach to the recorded 8:48 PM chain-snatching location, illustrative escape, police notification, and FIR registration. Point out the dashed inferred route and the missing CCTV, exact route, arrest, and chargesheet links.
 
 ## 2:20–2:40 — Action
 
-Return to the situation alert and describe the recommended review or patrol response. State clearly that an authorized officer makes the final decision.
+Show the operational recommendations and request analyst review. Point to the generated audit entry and state clearly that human approval is required before district coordination.
 
 ## 2:40–3:00 — Scale and impact
 

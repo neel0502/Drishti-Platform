@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -10,6 +11,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 import re
 import os
 import json
+import math
+from datetime import datetime, timedelta, timezone
 from threading import Event, Thread
 
 # Create FastAPI app
@@ -49,6 +52,7 @@ case_ids_list = []
 G = nx.Graph()
 analytics_ready = Event()
 analytics_error = None
+operational_action_log = []
 
 
 @app.get("/api/health", tags=["operations"])
@@ -295,6 +299,18 @@ def get_complete_analysis_periods():
     return latest_complete, latest_complete - 1
 
 
+def haversine_km(lat1, lng1, lat2, lng2):
+    radius_km = 6371.0
+    phi1, phi2 = math.radians(float(lat1)), math.radians(float(lat2))
+    delta_phi = math.radians(float(lat2) - float(lat1))
+    delta_lambda = math.radians(float(lng2) - float(lng1))
+    value = (
+        math.sin(delta_phi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+    )
+    return radius_km * 2 * math.atan2(math.sqrt(value), math.sqrt(1 - value))
+
+
 def get_case_links(case_id, top_n=8):
     """Build explainable cross-case links from narrative and relational evidence."""
     try:
@@ -312,6 +328,7 @@ def get_case_links(case_id, top_n=8):
     )
     source_phone = clean_val(source.get('phone'))
     source_vehicle = clean_val(source.get('vehicle'))
+    source_time = pd.to_datetime(source['IncidentFromDate'])
     links = []
 
     for candidate in find_similar_cases(case_id, top_n=max(top_n * 4, 20)):
@@ -323,11 +340,22 @@ def get_case_links(case_id, top_n=8):
         shared_accused = sorted(source_accused.intersection(candidate_accused))
         shared_phone = bool(source_phone and source_phone == clean_val(candidate_row.get('phone')))
         shared_vehicle = bool(source_vehicle and source_vehicle == clean_val(candidate_row.get('vehicle')))
+        distance_km = haversine_km(
+            source['latitude'], source['longitude'],
+            candidate_row['latitude'], candidate_row['longitude'],
+        )
+        candidate_time = pd.to_datetime(candidate_row['IncidentFromDate'])
+        hour_difference = abs(source_time.hour - candidate_time.hour)
+        hour_difference = min(hour_difference, 24 - hour_difference)
 
-        narrative_score = round(candidate['similarity'] * 70)
+        narrative_score = round(candidate['similarity'] * 50)
         accused_score = min(20, len(shared_accused) * 10)
-        identifier_score = (5 if shared_phone else 0) + (5 if shared_vehicle else 0)
-        connection_score = min(100, narrative_score + accused_score + identifier_score)
+        identifier_score = (7.5 if shared_phone else 0) + (7.5 if shared_vehicle else 0)
+        geographic_score = round(max(0, 10 * (1 - distance_km / 25)), 1) if distance_km <= 25 else 0
+        time_score = 5 if hour_difference <= 2 else 2 if hour_difference <= 4 else 0
+        connection_score = min(100, round(
+            narrative_score + accused_score + identifier_score + geographic_score + time_score
+        ))
 
         evidence = [
             {
@@ -343,9 +371,33 @@ def get_case_links(case_id, top_n=8):
                 "weight": accused_score,
             })
         if shared_phone:
-            evidence.append({"type": "Shared phone", "value": source_phone, "weight": 5})
+            evidence.append({"type": "Shared phone", "value": source_phone, "weight": 7.5})
         if shared_vehicle:
-            evidence.append({"type": "Shared vehicle", "value": source_vehicle, "weight": 5})
+            evidence.append({"type": "Shared vehicle", "value": source_vehicle, "weight": 7.5})
+        if geographic_score:
+            evidence.append({
+                "type": "Geographic proximity",
+                "value": f"{distance_km:.1f} km between incidents",
+                "weight": geographic_score,
+            })
+        if time_score:
+            evidence.append({
+                "type": "Time-of-day pattern",
+                "value": f"Incident hours differ by {hour_difference} hour(s)",
+                "weight": time_score,
+            })
+
+        missing_signals = []
+        if not shared_accused:
+            missing_signals.append("No shared accused record")
+        if not shared_phone:
+            missing_signals.append("No shared phone identifier")
+        if not shared_vehicle:
+            missing_signals.append("No shared vehicle identifier")
+        if not geographic_score:
+            missing_signals.append("Incidents are more than 25 km apart")
+        if not time_score:
+            missing_signals.append("No close time-of-day pattern")
 
         links.append({
             **candidate,
@@ -356,6 +408,9 @@ def get_case_links(case_id, top_n=8):
             "crimeType": str(candidate_row['_SubheadName']),
             "connectionScore": connection_score,
             "evidence": evidence,
+            "missingSignals": missing_signals,
+            "distanceKm": round(distance_km, 1),
+            "hourDifference": hour_difference,
         })
 
     links.sort(key=lambda item: (item['connectionScore'], item['similarity']), reverse=True)
@@ -373,7 +428,7 @@ def get_case_links(case_id, top_n=8):
         "method": {
             "name": "Explainable Case Linker",
             "threshold": "TF-IDF cosine similarity >= 35%",
-            "scoring": "70% narrative + 20% co-accused + 10% shared identifiers",
+            "scoring": "50% narrative + 20% co-accused + 15% identifiers + 10% proximity + 5% time pattern",
         },
     }
 
@@ -738,6 +793,243 @@ def search_investigate(q: str = Query(..., min_length=2)):
 @app.get("/api/cases/{case_id}/links")
 def get_explainable_case_links(case_id: int, limit: int = Query(8, ge=1, le=20)):
     return get_case_links(case_id, top_n=limit)
+
+
+def build_incident_reconstruction(case_id):
+    source_rows = df_case[df_case['CaseMasterID'] == int(case_id)]
+    if source_rows.empty:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    source = source_rows.iloc[0]
+    incident_time = pd.to_datetime(source['IncidentFromDate']).to_pydatetime()
+    incident_end = pd.to_datetime(source['IncidentToDate']).to_pydatetime()
+    info_time = pd.to_datetime(source['InfoReceivedPSDate']).to_pydatetime()
+    fir_time = pd.to_datetime(source['CrimeRegisteredDate']).to_pydatetime()
+    latitude = float(source['latitude'])
+    longitude = float(source['longitude'])
+    vehicle = clean_val(source.get('vehicle'))
+    phone = clean_val(source.get('phone'))
+    accused_rows = df_accused[df_accused['CaseMasterID'] == int(case_id)]
+    victim_rows = df_victim[df_victim['CaseMasterID'] == int(case_id)]
+    arrest_rows = df_arrest[df_arrest['CaseMasterID'] == int(case_id)]
+    chargesheet_rows = df_chargesheet[df_chargesheet['CaseMasterID'] == int(case_id)]
+    case_links = get_case_links(case_id, top_n=8)
+
+    events = []
+    route_coordinates = []
+    if vehicle:
+        approach = {
+            "lat": latitude - 0.006,
+            "lng": longitude - 0.008,
+            "timestamp": (incident_time - timedelta(minutes=30)).isoformat(),
+            "label": f"{vehicle} approaches incident area",
+            "type": "vehicle",
+            "sequence": 10,
+            "icon": "🚗",
+            "confidence": "inferred",
+            "source": "Illustrative approach only; exact route is absent from the schema",
+        }
+        events.append(approach)
+        route_coordinates.append({"lat": approach['lat'], "lng": approach['lng'], "confidence": "inferred"})
+
+    incident_icon = "💰" if any(
+        keyword in str(source['_SubheadName']).lower()
+        for keyword in ['robbery', 'snatching', 'burglary', 'theft']
+    ) else "⚠️"
+    events.append({
+        "lat": latitude,
+        "lng": longitude,
+        "timestamp": incident_time.isoformat(),
+        "label": f"{source['_SubheadName']} reported at this location",
+        "type": "incident",
+        "sequence": 20,
+        "icon": incident_icon,
+        "confidence": "recorded",
+        "source": "CaseMaster.IncidentFromDate and recorded coordinates",
+    })
+    route_coordinates.append({"lat": latitude, "lng": longitude, "confidence": "recorded"})
+
+    if vehicle:
+        escape = {
+            "lat": latitude + 0.005,
+            "lng": longitude + 0.009,
+            "timestamp": (incident_end + timedelta(minutes=15)).isoformat(),
+            "label": f"{vehicle} leaves the incident area",
+            "type": "vehicle",
+            "sequence": 30,
+            "icon": "🚗",
+            "confidence": "inferred",
+            "source": "Direction is illustrative; no GPS or CCTV route was supplied",
+        }
+        events.append(escape)
+        route_coordinates.append({"lat": escape['lat'], "lng": escape['lng'], "confidence": "inferred"})
+
+    events.append({
+        "lat": latitude,
+        "lng": longitude,
+        "timestamp": info_time.isoformat(),
+        "label": "Information received by police station",
+        "type": "police",
+        "sequence": 40,
+        "icon": "🚓",
+        "confidence": "recorded",
+        "source": "CaseMaster.InfoReceivedPSDate",
+    })
+    events.append({
+        "lat": latitude,
+        "lng": longitude,
+        "timestamp": fir_time.isoformat(),
+        "displayTime": fir_time.strftime("%d %b %Y · exact time unavailable"),
+        "label": f"FIR {source['CrimeNo']} registered",
+        "type": "fir",
+        "sequence": 50,
+        "icon": "📄",
+        "confidence": "recorded-date",
+        "source": "CaseMaster.CrimeRegisteredDate; exact registration time unavailable",
+    })
+
+    for _, arrest in arrest_rows.sort_values('ArrestSurrenderDate').head(3).iterrows():
+        events.append({
+            "lat": latitude,
+            "lng": longitude,
+            "timestamp": pd.to_datetime(arrest['ArrestSurrenderDate']).isoformat(),
+            "label": "Arrest/surrender event linked to FIR",
+            "type": "arrest",
+            "sequence": 60,
+            "icon": "⚖️",
+            "confidence": "recorded",
+            "source": "ArrestSurrender.ArrestSurrenderDate",
+        })
+
+    for _, chargesheet in chargesheet_rows.sort_values('csdate').head(1).iterrows():
+        events.append({
+            "lat": latitude,
+            "lng": longitude,
+            "timestamp": pd.to_datetime(chargesheet['csdate']).isoformat(),
+            "label": f"Chargesheet recorded · type {chargesheet['cstype']}",
+            "type": "chargesheet",
+            "sequence": 70,
+            "icon": "📑",
+            "confidence": "recorded",
+            "source": "ChargesheetDetails.csdate",
+        })
+
+    events.sort(key=lambda event: (event['sequence'], event['timestamp']))
+    missing_links = []
+
+    def report_missing(field, impact, next_step, status="missing"):
+        missing_links.append({
+            "field": field,
+            "status": status,
+            "impact": impact,
+            "nextStep": next_step,
+        })
+
+    if not phone:
+        report_missing("Phone identifier", "Cannot test communication overlap", "Extract from CDR/FIR supplements if legally available")
+    if not vehicle:
+        report_missing("Vehicle identifier", "Cannot reconstruct approach or escape", "Review witness statement and vehicle registry")
+    else:
+        report_missing("Exact vehicle route", "Movement line is illustrative, not evidentiary", "Request CCTV/ANPR/GPS observations", "partial")
+    if accused_rows.empty:
+        report_missing("Accused link", "No person can be connected to this event", "Review accused and unknown-person supplements")
+    if victim_rows.empty:
+        report_missing("Victim record", "Victim context cannot be validated", "Link Victim table entry")
+    if arrest_rows.empty:
+        report_missing("Arrest/surrender link", "Custody outcome is unknown", "Check ArrestSurrender records")
+    if chargesheet_rows.empty:
+        report_missing("Chargesheet link", "Investigation outcome is incomplete", "Check ChargesheetDetails records")
+    report_missing("CCTV/ANPR evidence", "Vehicle movement cannot be verified", "Attach timestamped camera observations")
+    if info_time < incident_time:
+        report_missing(
+            "Chronology integrity",
+            "Police-information timestamp precedes incident timestamp",
+            "Validate source-system timestamps before relying on sequence",
+            "conflict",
+        )
+
+    completeness_checks = [
+        bool(phone), bool(vehicle), not accused_rows.empty, not victim_rows.empty,
+        not arrest_rows.empty, not chargesheet_rows.empty,
+    ]
+    completeness = round(sum(completeness_checks) / len(completeness_checks) * 100)
+    strongest_score = case_links['relatedCases'][0]['connectionScore'] if case_links['relatedCases'] else 0
+    linked_districts = sorted({item['district'] for item in case_links['relatedCases']})
+    recommendations = [
+        "Validate the highest-scoring cross-case links before merging investigations.",
+        "Request missing CCTV/ANPR or route evidence before treating inferred movement as fact.",
+    ]
+    if len(linked_districts) > 1:
+        recommendations.append(f"Coordinate review across {', '.join(linked_districts)}.")
+    if missing_links:
+        recommendations.append(f"Resolve {len(missing_links)} missing or partial evidence links in priority order.")
+
+    return {
+        "case": {
+            "caseId": int(case_id),
+            "crimeNo": str(source['CrimeNo']),
+            "crimeType": str(source['_SubheadName']),
+            "district": get_district_name(source['_DistrictID']),
+            "briefFacts": str(source['BriefFacts']),
+            "incidentTime": incident_time.isoformat(),
+            "vehicle": vehicle,
+            "phone": phone,
+            "accused": accused_rows['AccusedName'].dropna().unique().tolist(),
+        },
+        "events": events,
+        "routeCoordinates": route_coordinates,
+        "missingLinks": missing_links,
+        "dataCompleteness": completeness,
+        "linkedCases": case_links['relatedCases'],
+        "decisionSupport": {
+            "priority": "HIGH REVIEW" if strongest_score >= 75 else "STANDARD REVIEW",
+            "strongestLinkScore": strongest_score,
+            "affectedDistricts": linked_districts,
+            "recommendedActions": recommendations,
+            "humanReviewRequired": True,
+        },
+        "legend": {
+            "recorded": "Recorded in supplied relational schema",
+            "inferred": "Illustrative reconstruction; not evidence",
+        },
+    }
+
+
+@app.get("/api/cases/{case_id}/reconstruction")
+def get_incident_reconstruction(case_id: int):
+    return build_incident_reconstruction(case_id)
+
+
+class OperationalActionRequest(BaseModel):
+    caseId: int
+    actionType: str
+    rationale: str
+    officer: str = "DGP R. Sharma"
+    approved: bool = False
+
+
+@app.post("/api/actions")
+def record_operational_action(action: OperationalActionRequest):
+    if df_case[df_case['CaseMasterID'] == action.caseId].empty:
+        raise HTTPException(status_code=404, detail="Case not found")
+    entry = {
+        "actionId": len(operational_action_log) + 1,
+        "caseId": action.caseId,
+        "actionType": action.actionType,
+        "rationale": action.rationale,
+        "officer": action.officer,
+        "status": "approved by human reviewer" if action.approved else "pending human review",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    operational_action_log.append(entry)
+    return entry
+
+
+@app.get("/api/actions")
+def get_operational_actions(caseId: int = None):
+    if caseId is None:
+        return {"actions": operational_action_log}
+    return {"actions": [entry for entry in operational_action_log if entry['caseId'] == caseId]}
 
 @app.get("/api/profile/{name}")
 def get_suspect_profile(name: str):

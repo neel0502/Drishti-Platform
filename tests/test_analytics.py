@@ -66,3 +66,48 @@ def test_narrative_identifier_extraction():
 
     assert phone == "98450-12345"
     assert vehicle == "KA-05 MX 1234"
+
+
+def test_reconstruction_separates_recorded_and_inferred_events():
+    payload = analytics.build_incident_reconstruction(50005)
+    event_types = [event["type"] for event in payload["events"]]
+
+    assert event_types[:5] == ["vehicle", "incident", "vehicle", "police", "fir"]
+    assert payload["events"][0]["confidence"] == "inferred"
+    assert payload["events"][1]["confidence"] == "recorded"
+    assert any(link["field"] == "Exact vehicle route" for link in payload["missingLinks"])
+    assert payload["decisionSupport"]["humanReviewRequired"] is True
+
+
+def test_reconstruction_reports_absent_identifiers_without_inventing_route():
+    payload = analytics.build_incident_reconstruction(1)
+    missing_fields = {link["field"] for link in payload["missingLinks"]}
+
+    assert "Phone identifier" in missing_fields
+    assert "Vehicle identifier" in missing_fields
+    assert not payload["routeCoordinates"] or len(payload["routeCoordinates"]) == 1
+    assert all(event["confidence"] != "inferred" for event in payload["events"])
+
+
+def test_fusion_engine_reports_present_and_missing_signals():
+    payload = analytics.get_case_links(50005)
+    strongest = payload["relatedCases"][0]
+
+    assert strongest["connectionScore"] >= 50
+    assert any(item["type"] == "MO narrative" for item in strongest["evidence"])
+    assert "missingSignals" in strongest
+
+
+def test_operational_action_is_audited_with_human_status():
+    analytics.operational_action_log.clear()
+    request = analytics.OperationalActionRequest(
+        caseId=50005,
+        actionType="analyst-review",
+        rationale="Validate missing route evidence",
+        approved=False,
+    )
+    result = analytics.record_operational_action(request)
+
+    assert result["actionId"] == 1
+    assert result["status"] == "pending human review"
+    assert analytics.get_operational_actions(50005)["actions"][0]["rationale"] == request.rationale

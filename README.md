@@ -17,6 +17,9 @@ It turns synthetic SCRB-style records into a state-level command dashboard, geog
 - District drill-down for station and offender summaries
 - Explainable FIR-to-FIR links with narrative, co-accused, phone, and vehicle evidence
 - Computed 12-month district/category anomaly baselines
+- Evidence-aware incident reconstruction with a map timeline and explicit inferred steps
+- Missing-link reporting for absent identifiers, routes, CCTV, arrests, victims, and chargesheets
+- Human-reviewed operational recommendations with a prototype action audit trail
 
 ## Architecture
 
