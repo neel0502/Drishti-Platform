@@ -1,6 +1,7 @@
 // DRISHTI APPLICATION CONTROLLER - FRONTEND
 
-const API_BASE = "http://127.0.0.1:8000/api";
+// Use the backend served by the same host in local and Catalyst deployments.
+const API_BASE = "/api";
 
 // State variables
 let activePanel = "home";
@@ -18,12 +19,30 @@ document.addEventListener("DOMContentLoaded", () => {
   initSearch();
   initDistrictDrilldown();
   
-  // Load initial dashboard state
-  fetchDashboardData();
-  fetchMapData();
-  fetchSituationsData();
-  fetchNetworkGroups();
+  // Catalyst can cold-start before the analytics data is ready. Wait for
+  // readiness so the first page load populates without a manual refresh.
+  initializeDashboardData();
 });
+
+async function initializeDashboardData() {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    try {
+      const response = await fetch(`${API_BASE}/health`, { cache: "no-store" });
+      const health = await response.json();
+      if (response.ok && health.dataLoaded) break;
+    } catch (error) {
+      console.debug("Backend is still starting:", error);
+    }
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+
+  await Promise.all([
+    fetchDashboardData(),
+    fetchMapData(),
+    fetchSituationsData(),
+    fetchNetworkGroups()
+  ]);
+}
 
 // ─── NAVIGATION ───────────────────────────────────────────────────────────
 function initNavigation() {
