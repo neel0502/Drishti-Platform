@@ -77,6 +77,13 @@ function initOperationalShell() {
       document.querySelector(`.nav-link[data-target="${button.dataset.openPanel}"]`)?.click();
     });
   });
+
+  document.addEventListener("keydown", event => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      document.getElementById("global-search-input").focus();
+    }
+  });
 }
 
 function updateWorkspaceHeader(target) {
@@ -539,7 +546,7 @@ function initMapLayers(geojson, incidents) {
     dashboardMap = L.map("dashboard-map", {
       center: [15.3, 76.2], // Center of Karnataka
       zoom: 6,
-      zoomControl: false,
+      zoomControl: true,
       attributionControl: false
     });
     L.tileLayer(mapTilesUrl).addTo(dashboardMap);
@@ -1247,7 +1254,7 @@ function renderProfilePathMap(coords) {
     profileMap = L.map("profile-movement-map", {
       center: [15.3, 76.2],
       zoom: 6,
-      zoomControl: false,
+      zoomControl: true,
       attributionControl: false
     });
     L.tileLayer(mapTilesUrl).addTo(profileMap);
@@ -1361,7 +1368,7 @@ function renderNetworkCanvas(graphData) {
         border: '#21262D',
         highlight: { background: '#58A6FF', border: '#FFF' }
       },
-      font: { color: '#E6EDF3', face: 'Inter', size: 12 },
+      font: { color: '#E6EDF3', face: 'Manrope', size: 14, strokeWidth: 3, strokeColor: '#08111c' },
       title: n.title,
       group: n.group
     };
@@ -1371,7 +1378,7 @@ function renderNetworkCanvas(graphData) {
     from: e.from,
     to: e.to,
     label: e.label,
-    font: { color: '#8B949E', size: 9, face: 'Inter', align: 'horizontal' },
+    font: { color: '#AFC4D8', size: 10, face: 'Manrope', align: 'horizontal', strokeWidth: 2, strokeColor: '#08111c' },
     color: { color: e.color || '#21262D', highlight: '#58A6FF' },
     width: e.width || 1
   })));
@@ -1379,27 +1386,46 @@ function renderNetworkCanvas(graphData) {
   const data = { nodes, edges };
   
   const options = {
+    layout: {
+      improvedLayout: true,
+      randomSeed: 12
+    },
     physics: {
-      forceAtlas2Based: {
-        gravitationalConstant: -26,
-        centralGravity: 0.005,
-        springLength: 150,
-        springConstant: 0.18
+      barnesHut: {
+        gravitationalConstant: -5200,
+        centralGravity: 0.24,
+        springLength: 125,
+        springConstant: 0.045,
+        damping: 0.18,
+        avoidOverlap: 0.55
       },
-      maxVelocity: 146,
-      solver: 'forceAtlas2Based',
-      timestep: 0.35,
-      stabilization: { iterations: 150 }
+      maxVelocity: 45,
+      minVelocity: 0.3,
+      solver: 'barnesHut',
+      timestep: 0.45,
+      stabilization: { enabled: true, iterations: 280, updateInterval: 30, fit: true }
     },
     interaction: {
       hover: true,
       tooltipDelay: 100,
       zoomView: true,
-      dragView: true
-    }
+      dragView: true,
+      navigationButtons: true,
+      keyboard: { enabled: true, bindToWindow: false }
+    },
+    nodes: { borderWidth: 2, shadow: { enabled:true, color:'rgba(0,0,0,.35)', size:8, x:0, y:3 } },
+    edges: { smooth: { enabled:true, type:'dynamic', roundness:.18 }, selectionWidth:2 }
   };
   
   networkInstance = new vis.Network(container, data, options);
+  networkInstance.once("stabilizationIterationsDone", () => {
+    networkInstance.setOptions({ physics: false });
+    networkInstance.fit({ animation: { duration: 450, easingFunction: "easeInOutQuad" } });
+    window.setTimeout(() => {
+      const scale = networkInstance.getScale();
+      if (scale < 0.65) networkInstance.moveTo({ scale: 0.78, animation: { duration: 300 } });
+    }, 500);
+  });
   
   // Double-click accused node to open profile
   networkInstance.on("doubleClick", (params) => {
@@ -1553,7 +1579,7 @@ function loadAlertDetails(alertId) {
     alertMap = L.map("alert-incident-map", {
       center: [15.3, 76.2],
       zoom: 6,
-      zoomControl: false,
+      zoomControl: true,
       attributionControl: false
     });
     L.tileLayer(mapTilesUrl).addTo(alertMap);
