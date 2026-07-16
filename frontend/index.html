@@ -271,16 +271,13 @@
         <!-- PANEL: SEARCH & INVESTIGATE -->
         <section class="content-panel" id="search-panel">
           <div class="search-hero">
-            <h2>Intelligence Query Engine</h2>
-            <p class="hero-sub">Type a suspect's name, phone, getaway vehicle, or case ID to link incidents instantly</p>
-            <div class="search-chips">
-              <span class="search-chip" onclick="fillSearch('Kiran Kumar')">Person: Kiran Kumar</span>
-              <span class="search-chip" onclick="fillSearch('98450-12345')">Phone: 98450-12345</span>
-              <span class="search-chip" onclick="fillSearch('KA-05 MX 1234')">Vehicle: KA-05 MX 1234</span>
-              <span class="search-chip" onclick="fillSearch('202450000')">Case ID Prefix: 202450</span>
-              <span class="search-chip" onclick="fillSearch('100010001202450004')">Reconstruction Demo: 8:48 PM Snatching</span>
-            </div>
+            <span class="eyebrow">POLICE INVESTIGATION WORKSPACE</span>
+            <h2>Search FIRs and linked entities</h2>
+            <p class="hero-sub">Search by accused name, FIR number, phone, vehicle, offence, location clue, or words from the complaint narrative.</p>
+            <div class="demo-scenario-header"><strong>Validated demo scenarios</strong><span>Synthetic records · click any card to run</span></div>
+            <div class="demo-scenario-grid" id="demo-scenarios"><div class="loading-spinner">Loading verified scenarios…</div></div>
           </div>
+          <div id="search-guidance" class="analysis-note">Enter at least two characters above, or choose a validated scenario. Results will show only evidence present in the deployed Catalyst dataset.</div>
           
           <div id="search-results-area" style="display:none;">
             <!-- Column layouts for different entity hits -->

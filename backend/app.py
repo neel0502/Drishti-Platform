@@ -662,6 +662,30 @@ def get_dashboard():
         "description": f"{item['count']} cases · {item['ratio']}× the 12-month baseline",
         "link": "alerts",
     } for index, item in enumerate(anomalies)]
+    if not alerts:
+        alerts = [
+            {
+                "id": "validation-property-review",
+                "severity": "watch",
+                "title": "Property-crime linkage review",
+                "description": "Demo watch: inspect recurring MO, vehicle, phone, and accused links.",
+                "link": "alerts",
+            },
+            {
+                "id": "validation-pending-review",
+                "severity": "watch",
+                "title": "Pending-case supervision queue",
+                "description": "Demo watch: review missing arrest, chargesheet, and evidence links.",
+                "link": "alerts",
+            },
+            {
+                "id": "validation-quality-review",
+                "severity": "watch",
+                "title": "Data-quality validation queue",
+                "description": "Demo watch: resolve incomplete fields before analytical use.",
+                "link": "alerts",
+            },
+        ]
     
     # Monthly counts for 24 months (2023-01 to 2024-12)
     df_case['ym'] = df_case['CrimeRegisteredDate'].astype(str).str.slice(0, 7)
@@ -885,10 +909,15 @@ def search_investigate(q: str = Query(..., min_length=2)):
             "associates": associates
         })
 
-    # 4. Search Case / FIR Numbers
+    # 4. Search Case/FIR numbers, crime classifications, locations, and narratives.
+    narrative_match = (
+        df_case['CrimeNo'].astype(str).str.lower().str.contains(q, na=False, regex=False)
+        | df_case['CaseNo'].astype(str).str.lower().str.contains(q, na=False, regex=False)
+        | df_case['_SubheadName'].astype(str).str.lower().str.contains(q, na=False, regex=False)
+        | df_case['BriefFacts'].astype(str).str.lower().str.contains(q, na=False, regex=False)
+    )
     matched_cases = df_case[
-        df_case['CrimeNo'].astype(str).str.lower().str.contains(q, na=False) | 
-        df_case['CaseNo'].astype(str).str.lower().str.contains(q, na=False)
+        narrative_match
     ]
     
     # Relevance sorting for cases
@@ -916,6 +945,76 @@ def search_investigate(q: str = Query(..., min_length=2)):
         })
         
     return results
+
+
+@app.get("/api/demo-scenarios")
+def get_demo_scenarios():
+    """Return deploy-safe scenarios selected from records that actually exist."""
+    scenarios = []
+
+    def add_case_scenario(label, description, cases, action="search"):
+        if cases.empty:
+            return
+        row = cases.iloc[0]
+        scenarios.append({
+            "label": label,
+            "description": description,
+            "query": str(row['CrimeNo']),
+            "caseId": int(row['CaseMasterID']),
+            "crimeNo": str(row['CrimeNo']),
+            "action": action,
+        })
+
+    linked_people = df_accused['AccusedName'].value_counts()
+    if not linked_people.empty:
+        person = str(linked_people.index[0])
+        scenarios.append({
+            "label": "Repeat-offender check",
+            "description": f"Find FIRs and custody status linked to {person}.",
+            "query": person,
+            "action": "search",
+        })
+
+    if (df_case['phone'] == "98450-12345").any():
+        scenarios.append({
+            "label": "Shared phone linkage",
+            "description": "Trace a phone identifier across accused and FIR records.",
+            "query": "98450-12345",
+            "action": "search",
+        })
+    if (df_case['vehicle'] == "KA-05 MX 1234").any():
+        scenarios.append({
+            "label": "Getaway vehicle linkage",
+            "description": "Trace the same vehicle across incidents and districts.",
+            "query": "KA-05 MX 1234",
+            "action": "search",
+        })
+
+    add_case_scenario(
+        "Burglary investigation",
+        "Search FIR narratives for a common modus operandi.",
+        df_case[df_case['_SubheadName'].str.contains("Burglary", case=False, na=False)],
+    )
+    add_case_scenario(
+        "Incident reconstruction",
+        "Replay recorded and inferred events, then inspect missing evidence.",
+        df_case[
+            df_case['vehicle'].notna()
+            & df_case['IncidentFromDate'].notna()
+        ],
+        "reconstruct",
+    )
+    add_case_scenario(
+        "Cross-case MO linker",
+        "Rank explainable links using narratives, people, phone, and vehicle evidence.",
+        df_case[df_case['BriefFacts'].str.len() > 40],
+        "links",
+    )
+
+    return {
+        "scenarios": scenarios[:6],
+        "notice": "Synthetic demonstration records. Validate every inference against source evidence.",
+    }
 
 
 @app.get("/api/cases/{case_id}/links")
@@ -1584,7 +1683,61 @@ def get_situations():
             ),
         })
 
-    return {"alerts": alerts, "method": "12-month district/category z-score baseline"}
+    if not alerts:
+        validations = [
+            (
+                "Cross-district property-crime review",
+                df_case[df_case['CrimeMajorHeadID'] == 2],
+                "Validate recurring property-crime narratives and shared identifiers across districts.",
+            ),
+            (
+                "Pending-case supervision review",
+                df_case[~df_case['CaseStatusID'].isin([2, 3])],
+                "Review older pending FIRs for missing arrest, chargesheet, or evidence links.",
+            ),
+            (
+                "Data-quality exception review",
+                df_case[
+                    df_case['BriefFacts'].fillna("").str.strip().eq("")
+                    | df_case['latitude'].isna()
+                    | df_case['longitude'].isna()
+                ],
+                "Resolve missing narrative or location fields before analytical use.",
+            ),
+        ]
+        for index, (title, cases, recommendation) in enumerate(validations):
+            if cases.empty:
+                continue
+            sample = cases.sort_values('CrimeRegisteredDate', ascending=False).head(3)
+            alerts.append({
+                "id": f"validation-watch-{index}",
+                "severity": "watch",
+                "title": title,
+                "timeText": "Demo validation watch · not an operational alert",
+                "description": f"{len(cases):,} records match this review queue.",
+                "whatHappened": (
+                    "No statistically significant current spike was detected. "
+                    "This queue is provided for workflow testing and supervisory validation."
+                ),
+                "cases": [{
+                    "id": int(row['CaseMasterID']),
+                    "crimeNo": str(row['CrimeNo']),
+                    "date": str(row['CrimeRegisteredDate']),
+                    "facts": str(row['BriefFacts']),
+                    "lat": float(row['latitude']),
+                    "lng": float(row['longitude']),
+                } for _, row in sample.iterrows()],
+                "evidence": [
+                    {"label": "Queue size", "value": f"{len(cases):,} matching FIR records"},
+                    {"label": "Classification", "value": "Demonstration/validation watch"},
+                ],
+                "recommendedAction": f"Suggested supervisory test: {recommendation}",
+            })
+
+    return {
+        "alerts": alerts,
+        "method": "12-month district/category z-score baseline; validation watches are labelled",
+    }
 
 @app.get("/api/districts/{district_id}")
 def get_district_details(district_id: int):

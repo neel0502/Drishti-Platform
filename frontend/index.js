@@ -28,6 +28,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initReconstruction();
   initAnalyticsLabs();
   initResponsiveShell();
+  loadDemoScenarios();
   
   // Catalyst can cold-start before the analytics data is ready. Wait for
   // readiness so the first page load populates without a manual refresh.
@@ -85,6 +86,39 @@ function initAnalyticsLabs() {
   document.getElementById("forecast-run").addEventListener("click", runForecastBacktest);
   document.getElementById("hypothesis-form").addEventListener("submit", saveHypothesisBoard);
   loadHypothesisBoards();
+}
+
+const labLoaded = new Set();
+
+async function loadDemoScenarios() {
+  const container = document.getElementById("demo-scenarios");
+  try {
+    const response = await fetch(`${API_BASE}/demo-scenarios`);
+    const data = await response.json();
+    container.innerHTML = data.scenarios.map((scenario, index) => `
+      <button class="demo-scenario-card" type="button" data-index="${index}">
+        <span class="scenario-number">${String(index + 1).padStart(2, "0")}</span>
+        <strong>${escapeLab(scenario.label)}</strong>
+        <span>${escapeLab(scenario.description)}</span>
+        <small>${escapeLab(scenario.crimeNo || scenario.query)}</small>
+      </button>`).join("");
+    container.querySelectorAll(".demo-scenario-card").forEach((button, index) => {
+      button.addEventListener("click", () => runDemoScenario(data.scenarios[index]));
+    });
+    document.getElementById("search-guidance").textContent = data.notice;
+  } catch (error) {
+    container.innerHTML = `<div class="analysis-note warning">Unable to load demo scenarios: ${escapeLab(error.message)}</div>`;
+  }
+}
+
+function runDemoScenario(scenario) {
+  if (scenario.action === "reconstruct" && scenario.caseId) {
+    loadIncidentReconstruction(scenario.caseId);
+  } else if (scenario.action === "links" && scenario.caseId) {
+    loadCaseMO(scenario.caseId);
+  } else {
+    fillSearch(scenario.query);
+  }
 }
 
 async function fetchLab(path, button) {
@@ -215,6 +249,14 @@ function initNavigation() {
       document.getElementById(`${target}-panel`).classList.add("active");
       
       activePanel = target;
+      if (!labLoaded.has(target)) {
+        labLoaded.add(target);
+        if (target === "patterns") runPatternDiscovery();
+        else if (target === "lifecycle") runLifecycleAnalysis();
+        else if (target === "patrol") runPatrolPlan();
+        else if (target === "quality") runQualityAudit();
+        else if (target === "forecast") runForecastBacktest();
+      }
       
       // Resize/reinitialize maps & graphs on transition to ensure correct dimensions
       setTimeout(() => {
@@ -705,6 +747,7 @@ function initSearch() {
     const q = e.target.value.trim();
     if (q.length < 2) {
       document.getElementById("search-results-area").style.display = "none";
+      document.getElementById("search-guidance").textContent = "Enter at least two characters, or choose a validated scenario.";
       return;
     }
     
@@ -722,6 +765,13 @@ function initSearch() {
 function renderSearchResults(data) {
   const resultsArea = document.getElementById("search-results-area");
   resultsArea.style.display = "block";
+  const total = ["people", "phones", "vehicles", "cases"]
+    .reduce((sum, key) => sum + (data[key]?.length || 0), 0);
+  const guidance = document.getElementById("search-guidance");
+  guidance.className = `analysis-note${total ? "" : " warning"}`;
+  guidance.textContent = total
+    ? `${total} evidence-linked result${total === 1 ? "" : "s"} found. Open a profile, reconstruct an FIR, or inspect MO links.`
+    : "No matching Catalyst records. Try an offence such as burglary, an accused name, a FIR number, phone 98450, or vehicle KA-05.";
   
   // 1. Suspect People
   const peopleSec = document.getElementById("section-people");
