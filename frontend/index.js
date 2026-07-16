@@ -18,6 +18,8 @@ let reconstructionInterval = null;
 let patrolMap = null;
 let patrolLayer = null;
 let forecastChart = null;
+let activeNetworkGraph = null;
+let profileLoaded = false;
 
 // DOM Ready
 document.addEventListener("DOMContentLoaded", () => {
@@ -315,6 +317,8 @@ function initNavigation() {
         else if (target === "patrol") runPatrolPlan();
         else if (target === "quality") runQualityAudit();
         else if (target === "forecast") runForecastBacktest();
+        else if (target === "profile") loadSuspectProfile("Kiran Kumar");
+        else if (target === "reconstruction") loadIncidentReconstruction(50005);
       }
       
       // Resize/reinitialize maps & graphs on transition to ensure correct dimensions
@@ -324,13 +328,20 @@ function initNavigation() {
         } else if (target === "map" && mainMap) {
           mainMap.invalidateSize();
         } else if (target === "profile" && profileMap) {
-          profileMap.invalidateSize();
+          profileMap.invalidateSize(true);
+          if (profilePolyline?.getBounds().isValid()) profileMap.fitBounds(profilePolyline.getBounds(), { padding:[35,35], maxZoom:11 });
         } else if (target === "networks" && networkInstance) {
-          networkInstance.fit();
+          networkInstance.redraw();
+          networkInstance.fit({ animation:{ duration:250 } });
+        } else if (target === "networks" && activeNetworkGraph) {
+          renderNetworkCanvas(activeNetworkGraph);
+        } else if (target === "reconstruction" && reconstructionMap) {
+          reconstructionMap.invalidateSize(true);
         } else if (target === "patrol" && patrolMap) {
-          patrolMap.invalidateSize();
+          patrolMap.invalidateSize(true);
         }
-      }, 100);
+        if (target === "alerts" && alertMap) alertMap.invalidateSize(true);
+      }, 220);
     });
   });
 }
@@ -519,7 +530,7 @@ let hourSliderIndex = 20; // default 8 PM
 let playInterval = null;
 
 // Tile styling options (using dark CartoDB tiles)
-const mapTilesUrl = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+const mapTilesUrl = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
 const mapAttrib = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
 async function fetchMapData() {
@@ -1024,6 +1035,7 @@ function initReconstruction() {
 
 async function loadIncidentReconstruction(caseId) {
   try {
+    labLoaded.add("reconstruction");
     const response = await fetch(`${API_BASE}/cases/${encodeURIComponent(caseId)}/reconstruction`);
     if (!response.ok) throw new Error(`Reconstruction request failed: ${response.status}`);
     reconstructionData = await response.json();
@@ -1031,15 +1043,18 @@ async function loadIncidentReconstruction(caseId) {
     pdfButton.href = `${API_BASE}/cases/${encodeURIComponent(caseId)}/brief.pdf`;
     pdfButton.classList.remove("disabled-link");
     pdfButton.removeAttribute("aria-disabled");
-    triggerNav("reconstruction");
+    if (activePanel !== "reconstruction") triggerNav("reconstruction");
     renderReconstructionSummary();
-    initializeReconstructionMap();
+    window.setTimeout(() => {
+      initializeReconstructionMap();
+      renderReconstructionStep(0);
+      reconstructionMap.invalidateSize(true);
+    }, 120);
 
     const slider = document.getElementById("reconstruction-slider");
     slider.min = 0;
     slider.max = Math.max(0, reconstructionData.events.length - 1);
     slider.value = 0;
-    renderReconstructionStep(0);
   } catch (error) {
     console.error("Unable to reconstruct incident:", error);
   }
@@ -1180,6 +1195,7 @@ async function submitOperationalAction(approved) {
 // ─── SCREEN 4: INTELLIGENCE PROFILES ──────────────────────────────────────
 async function loadSuspectProfile(name) {
   try {
+    labLoaded.add("profile");
     const res = await fetch(`${API_BASE}/profile/${encodeURIComponent(name)}`);
     const data = await res.json();
     
@@ -1235,11 +1251,13 @@ async function loadSuspectProfile(name) {
       timeline.appendChild(block);
     });
     
-    // Draw Profile Map Path
-    renderProfilePathMap(data.movement);
-    
     // Switch to profile tab
-    triggerNav("profile");
+    if (activePanel !== "profile") triggerNav("profile");
+    profileLoaded = true;
+    window.setTimeout(() => {
+      renderProfilePathMap(data.movement);
+      profileMap?.invalidateSize(true);
+    }, 120);
     
   } catch (err) {
     console.error("Failed loading suspect profile:", err);
@@ -1347,9 +1365,16 @@ async function fetchNetworkGroupGraph(groupName) {
 
 function renderNetworkCanvas(graphData) {
   const container = document.getElementById("network-graph-canvas");
+  activeNetworkGraph = graphData;
+  if (!container.offsetWidth || !container.offsetHeight) return;
+  if (networkInstance) {
+    networkInstance.destroy();
+    networkInstance = null;
+  }
   
   // Vis.js formats
-  const nodes = new vis.DataSet(graphData.nodes.map(n => {
+  const nodeCount = graphData.nodes.length;
+  const nodes = new vis.DataSet(graphData.nodes.map((n, index) => {
     let shape = "dot";
     let iconLabel = n.label;
     
@@ -1370,7 +1395,9 @@ function renderNetworkCanvas(graphData) {
       },
       font: { color: '#E6EDF3', face: 'Manrope', size: 14, strokeWidth: 3, strokeColor: '#08111c' },
       title: n.title,
-      group: n.group
+      group: n.group,
+      x: Math.cos((index / Math.max(1,nodeCount)) * Math.PI * 2) * (180 + (index % 3) * 35),
+      y: Math.sin((index / Math.max(1,nodeCount)) * Math.PI * 2) * (135 + (index % 2) * 30)
     };
   }));
   
@@ -1390,21 +1417,7 @@ function renderNetworkCanvas(graphData) {
       improvedLayout: true,
       randomSeed: 12
     },
-    physics: {
-      barnesHut: {
-        gravitationalConstant: -5200,
-        centralGravity: 0.24,
-        springLength: 125,
-        springConstant: 0.045,
-        damping: 0.18,
-        avoidOverlap: 0.55
-      },
-      maxVelocity: 45,
-      minVelocity: 0.3,
-      solver: 'barnesHut',
-      timestep: 0.45,
-      stabilization: { enabled: true, iterations: 280, updateInterval: 30, fit: true }
-    },
+    physics: false,
     interaction: {
       hover: true,
       tooltipDelay: 100,
@@ -1418,14 +1431,7 @@ function renderNetworkCanvas(graphData) {
   };
   
   networkInstance = new vis.Network(container, data, options);
-  networkInstance.once("stabilizationIterationsDone", () => {
-    networkInstance.setOptions({ physics: false });
-    networkInstance.fit({ animation: { duration: 450, easingFunction: "easeInOutQuad" } });
-    window.setTimeout(() => {
-      const scale = networkInstance.getScale();
-      if (scale < 0.65) networkInstance.moveTo({ scale: 0.78, animation: { duration: 300 } });
-    }, 500);
-  });
+  networkInstance.fit({ animation: { duration:350, easingFunction:"easeInOutQuad" } });
   
   // Double-click accused node to open profile
   networkInstance.on("doubleClick", (params) => {
@@ -1605,6 +1611,7 @@ function loadAlertDetails(alertId) {
       const group = new L.featureGroup(markers);
       alertMap.fitBounds(group.getBounds(), { padding: [30, 30] });
     }
+    window.setTimeout(() => alertMap?.invalidateSize(true), 80);
   }, 100);
 }
 
