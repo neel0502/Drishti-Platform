@@ -13,12 +13,27 @@ OUTPUT = ROOT / "output"
 MANIFEST = ROOT / "deployment" / "catalyst" / "datastore-schema.json"
 
 
-def clean_frame(frame):
+def clean_frame(frame, table):
     cleaned = frame.copy()
-    for column in cleaned.columns:
-        if "Date" in column or column.lower().endswith("date"):
+    column_types = table.get("columns", {})
+    for column, data_type in column_types.items():
+        if column not in cleaned:
+            continue
+        if column == "GenderID" and data_type == "BIGINT":
+            cleaned[column] = cleaned[column].map(
+                lambda value: {"M": 1, "F": 2, "T": 3}.get(str(value).strip().upper(), value)
+            )
+        elif data_type == "DATE":
+            parsed = pd.to_datetime(cleaned[column], errors="coerce")
+            cleaned[column] = parsed.dt.strftime("%Y-%m-%d").where(parsed.notna(), "")
+        elif data_type == "DATETIME":
             parsed = pd.to_datetime(cleaned[column], errors="coerce")
             cleaned[column] = parsed.dt.strftime("%Y-%m-%d %H:%M:%S").where(parsed.notna(), "")
+        elif data_type == "BOOLEAN":
+            cleaned[column] = cleaned[column].map(
+                lambda value: "" if pd.isna(value) or value == "" else
+                "true" if str(value).strip().lower() in {"1", "true", "yes"} else "false"
+            )
     return cleaned.replace({pd.NA: "", float("nan"): ""})
 
 
@@ -49,7 +64,21 @@ def main():
         original = len(frame)
         if args.environment == "development":
             if table["name"] == "CaseMaster":
-                frame = frame.sort_values("CrimeRegisteredDate", ascending=False).head(args.case_limit)
+                registered = pd.to_datetime(frame["CrimeRegisteredDate"], errors="coerce")
+                frame = frame.assign(_sample_month=registered.dt.to_period("M"))
+                months = sorted(frame["_sample_month"].dropna().unique())
+                base_size, remainder = divmod(args.case_limit, len(months))
+                sampled = []
+                for index, month in enumerate(months):
+                    group = frame[frame["_sample_month"] == month]
+                    month_size = base_size + (1 if index >= len(months) - remainder else 0)
+                    sampled.append(
+                        group.sample(
+                            n=min(month_size, len(group)),
+                            random_state=2026 + index,
+                        )
+                    )
+                frame = pd.concat(sampled).drop(columns="_sample_month")
                 selected_case_ids = set(frame["CaseMasterID"].astype(int))
             elif "CaseMasterID" in frame.columns and selected_case_ids is not None:
                 frame = frame[frame["CaseMasterID"].isin(selected_case_ids)]
@@ -57,18 +86,13 @@ def main():
         unique = table["unique"]
         duplicate_count = int(frame.duplicated(unique).sum())
         frame = frame.drop_duplicates(unique)
-        staged = clean_frame(frame)
+        staged = clean_frame(frame, table)
         staged.to_csv(destination / f"{table['name']}.csv", index=False)
         config = {
             "table_identifier": table["name"],
             "operation": "upsert",
             "find_by": unique
         }
-        if table.get("foreignKeys"):
-            config["fk_mapping"] = [
-                {"local_column": item["local"], "reference_column": item["reference"]}
-                for item in table["foreignKeys"]
-            ]
         (destination / f"{table['name']}.import.json").write_text(json.dumps(config, indent=2))
         report["tables"].append({
             "table": table["name"], "sourceRows": original, "stagedRows": len(staged),

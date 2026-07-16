@@ -31,7 +31,8 @@ generate_data.py
 .catalyst-migration/
 catalyst-debug.log
 tmp/pdfs/
-
+deployment/catalyst/iac/generated/
+export_*.zip
 
 
 

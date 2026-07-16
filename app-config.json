@@ -1,9 +1,10 @@
 {
-	"command": "sh -c 'python3 -m uvicorn backend.app:app --host 0.0.0.0 --port ${X_ZOHO_CATALYST_LISTEN_PORT}'",
+	"command": "sh -c 'cd .appsail-build && python3 -m uvicorn launcher:app --host 0.0.0.0 --port 9000'",
 	"build_path": "./.appsail-build",
 	"stack": "python_3_11",
 	"env_variables": {
-		"DRISHTI_DATA_SOURCE": "catalyst"
+		"DRISHTI_DATA_SOURCE": "catalyst",
+		"DRISHTI_BOOTSTRAP_DATASTORE": "false"
 	},
 	"memory": 1024,
 	"scripts": {

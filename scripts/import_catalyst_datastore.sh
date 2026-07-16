@@ -3,9 +3,14 @@ set -eu
 
 ENVIRONMENT="${1:-development}"
 STAGE_DIR="${2:-.catalyst-migration}"
+PROJECT_ID="${3:-}"
 PRODUCTION_FLAG=""
+PROJECT_FLAG=""
 if [ "$ENVIRONMENT" = "production" ]; then
   PRODUCTION_FLAG="--production"
+fi
+if [ -n "$PROJECT_ID" ]; then
+  PROJECT_FLAG="-p $PROJECT_ID"
 fi
 
 TABLES="
@@ -47,5 +52,5 @@ for table in $TABLES; do
     echo "Missing staged CSV: $csv" >&2
     exit 1
   fi
-  catalyst ds:import "$csv" --config "$config" $PRODUCTION_FLAG
+  catalyst $PROJECT_FLAG ds:import "$csv" --config "$config" $PRODUCTION_FLAG
 done

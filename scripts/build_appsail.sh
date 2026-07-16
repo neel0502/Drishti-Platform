@@ -20,5 +20,14 @@ python3 -m pip install \
 cp -R "$ROOT_DIR/backend" "$BUILD_DIR/backend"
 cp -R "$ROOT_DIR/frontend" "$BUILD_DIR/frontend"
 cp -R "$ROOT_DIR/output" "$BUILD_DIR/output"
+cp "$ROOT_DIR/launcher.py" "$BUILD_DIR/launcher.py"
+mkdir -p "$BUILD_DIR/deployment/catalyst"
+cp "$ROOT_DIR/deployment/catalyst/datastore-schema.json" "$BUILD_DIR/deployment/catalyst/datastore-schema.json"
+
+python3 "$ROOT_DIR/scripts/prepare_catalyst_import.py" \
+  --environment development \
+  --case-limit "${DRISHTI_BOOTSTRAP_CASE_LIMIT:-2000}" \
+  --destination .catalyst-migration
+cp -R "$ROOT_DIR/.catalyst-migration" "$BUILD_DIR/bootstrap-data"
 
 echo "AppSail bundle created at $BUILD_DIR"

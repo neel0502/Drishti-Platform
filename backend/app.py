@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,7 +14,7 @@ import os
 import json
 import math
 from datetime import datetime, timedelta, timezone
-from threading import Event, Thread
+from threading import Event, Lock, Thread
 from typing import Optional
 from io import BytesIO
 from reportlab.lib import colors
@@ -40,6 +40,8 @@ app.add_middleware(
 # Resolve directories
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
+BOOTSTRAP_DIR = os.path.join(BASE_DIR, "bootstrap-data")
+CATALYST_SCHEMA = os.path.join(BASE_DIR, "deployment", "catalyst", "datastore-schema.json")
 
 # Global DataFrames & Models
 df_case = None
@@ -61,6 +63,7 @@ tfidf_matrix = None
 case_ids_list = []
 G = nx.Graph()
 analytics_ready = Event()
+analytics_initialization_lock = Lock()
 analytics_error = None
 operational_action_log = []
 hypothesis_boards = []
@@ -87,7 +90,23 @@ def health_check():
 @app.middleware("http")
 async def analytics_readiness_guard(request, call_next):
     """Keep the service reachable while the analytics indexes initialize."""
-    if request.url.path.startswith("/api/") and request.url.path != "/api/health":
+    global analytics_error
+    bootstrap_mode = os.getenv("DRISHTI_BOOTSTRAP_DATASTORE", "false").lower() in {"1", "true", "yes"}
+    if catalyst_store.catalyst_requested() and not bootstrap_mode and not analytics_ready.is_set():
+        with analytics_initialization_lock:
+            if not analytics_ready.is_set():
+                try:
+                    catalyst_store.initialize_from_request(request)
+                    load_data()
+                    build_network_graph()
+                    build_nlp_index()
+                    analytics_error = None
+                    analytics_ready.set()
+                except Exception as exc:
+                    analytics_error = f"{type(exc).__name__}: {exc}"
+
+    readiness_exempt = {"/api/health", "/api/internal/bootstrap-datastore"}
+    if request.url.path.startswith("/api/") and request.url.path not in readiness_exempt:
         if analytics_error:
             return JSONResponse(
                 status_code=500,
@@ -552,6 +571,10 @@ def compute_monthly_anomalies(limit=5):
 
 @app.on_event("startup")
 def startup_event():
+    if catalyst_store.catalyst_requested():
+        print("Awaiting request-scoped Catalyst credentials for Data Store initialization.")
+        return
+
     def initialize_analytics():
         global analytics_error
         try:
@@ -564,6 +587,42 @@ def startup_event():
             print(f"[ERROR] Analytics initialization failed: {exc}")
 
     Thread(target=initialize_analytics, name="analytics-initializer", daemon=True).start()
+
+
+@app.post("/api/internal/bootstrap-datastore", tags=["operations"])
+def bootstrap_catalyst_datastore(request: Request, table: Optional[str] = Query(default=None)):
+    """One-time deployment bootstrap using Catalyst's injected request credentials."""
+    global analytics_error
+    if os.getenv("DRISHTI_BOOTSTRAP_DATASTORE", "false").lower() not in {"1", "true", "yes"}:
+        raise HTTPException(status_code=404, detail="Bootstrap mode is disabled")
+    if analytics_ready.is_set():
+        return {"status": "already-ready", "dataSource": data_source_status}
+
+    analytics_error = None
+    try:
+        catalyst_store.initialize_from_request(request)
+        report = catalyst_store.bootstrap_datastore(
+            BOOTSTRAP_DIR,
+            CATALYST_SCHEMA,
+            table_names={table} if table else None,
+        )
+        if table:
+            return {"status": "complete", "bootstrap": report}
+        load_data()
+        build_network_graph()
+        build_nlp_index()
+        analytics_ready.set()
+        return {"status": "complete", "bootstrap": report, "dataSource": data_source_status}
+    except Exception as exc:
+        analytics_error = f"{type(exc).__name__}: {exc}"
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "errorType": type(exc).__name__,
+                "error": str(exc),
+            },
+        )
 
 # ─── API ENDPOINTS ────────────────────────────────────────────────────────
 
@@ -1812,14 +1871,18 @@ def patrol_plan(
 @app.get("/api/data-quality")
 def data_quality_command_centre(districtId: Optional[int] = Query(default=None)):
     cases = filtered_cases(district_id=districtId)
+    cases['BriefFacts'] = cases['BriefFacts'].fillna("").astype(str)
+    cases['latitude'] = pd.to_numeric(cases['latitude'], errors='coerce')
+    cases['longitude'] = pd.to_numeric(cases['longitude'], errors='coerce')
+    cases['PoliceStationID'] = pd.to_numeric(cases['PoliceStationID'], errors='coerce')
     ids = set(cases['CaseMasterID'].astype(int))
     arrests = df_arrest[df_arrest['CaseMasterID'].isin(ids)].copy()
     sheets = df_chargesheet[df_chargesheet['CaseMasterID'].isin(ids)].copy()
     registered = cases.set_index('CaseMasterID')['_registered']
     arrest_dates = pd.to_datetime(arrests['ArrestSurrenderDate'], errors='coerce')
     sheet_dates = pd.to_datetime(sheets['csdate'], errors='coerce')
-    arrest_registered = arrests['CaseMasterID'].map(registered)
-    sheet_registered = sheets['CaseMasterID'].map(registered)
+    arrest_registered = pd.to_datetime(arrests['CaseMasterID'].map(registered), errors='coerce')
+    sheet_registered = pd.to_datetime(sheets['CaseMasterID'].map(registered), errors='coerce')
     narrative_counts = cases['BriefFacts'].str.strip().value_counts()
     duplicate_narratives = set(narrative_counts[narrative_counts > 1].index) - {""}
     invalid_coordinates = (
@@ -1831,8 +1894,8 @@ def data_quality_command_centre(districtId: Optional[int] = Query(default=None))
         {"name": "Duplicated narrative text", "count": int(cases['BriefFacts'].isin(duplicate_narratives).sum()), "severity": "medium"},
         {"name": "Invalid or missing coordinates", "count": int(invalid_coordinates.sum()), "severity": "high"},
         {"name": "Missing incident timestamp", "count": int(pd.to_datetime(cases['IncidentFromDate'], errors='coerce').isna().sum()), "severity": "medium"},
-        {"name": "Arrest before FIR", "count": int((arrest_dates < arrest_registered).sum()), "severity": "critical"},
-        {"name": "Chargesheet before FIR", "count": int((sheet_dates < sheet_registered).sum()), "severity": "critical"},
+        {"name": "Arrest before FIR", "count": int((arrest_dates.to_numpy() < arrest_registered.to_numpy()).sum()), "severity": "critical"},
+        {"name": "Chargesheet before FIR", "count": int((sheet_dates.to_numpy() < sheet_registered.to_numpy()).sum()), "severity": "critical"},
         {"name": "Unknown police station", "count": int((~cases['PoliceStationID'].isin(df_unit['UnitID'])).sum()), "severity": "high"},
     ]
     total_cells = len(cases) * 6
