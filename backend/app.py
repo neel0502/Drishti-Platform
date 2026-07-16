@@ -1295,7 +1295,8 @@ def get_suspect_profile(name: str):
     case_ids = df_accused[df_accused['AccusedName'] == matched_name]['CaseMasterID'].tolist()
     case_rows = df_case[df_case['CaseMasterID'].isin(case_ids)].sort_values('CrimeRegisteredDate', ascending=False)
     
-    age = int(acc_rows['AgeYear'].iloc[0])
+    age_value = pd.to_numeric(acc_rows['AgeYear'].iloc[0], errors='coerce')
+    age = int(age_value) if pd.notna(age_value) else None
     gender = str(acc_rows['GenderID'].iloc[0])
     phone_values = case_rows['phone'].dropna().value_counts()
     vehicle_values = case_rows['vehicle'].dropna().value_counts()
@@ -1331,12 +1332,15 @@ def get_suspect_profile(name: str):
             "status": get_case_status_name(r['CaseStatusID']),
             "briefFacts": str(r['BriefFacts'])
         })
-        movement_coordinates.append({
-            "lat": float(r['latitude']),
-            "lng": float(r['longitude']),
-            "district": dist_name,
-            "date": str(r['CrimeRegisteredDate'])
-        })
+        lat = pd.to_numeric(r['latitude'], errors='coerce')
+        lng = pd.to_numeric(r['longitude'], errors='coerce')
+        if pd.notna(lat) and pd.notna(lng):
+            movement_coordinates.append({
+                "lat": float(lat),
+                "lng": float(lng),
+                "district": dist_name,
+                "date": str(r['CrimeRegisteredDate'])
+            })
         
     return {
         "name": matched_name,
@@ -1361,6 +1365,37 @@ def get_suspect_profile(name: str):
         "timeline": timeline,
         "movement": movement_coordinates
     }
+
+@app.get("/api/profile-options")
+def get_profile_options(limit: int = Query(30, ge=5, le=100)):
+    counts = df_accused['AccusedName'].dropna().astype(str).value_counts().head(limit)
+    options = []
+    for name, case_count in counts.items():
+        rows = df_accused[df_accused['AccusedName'] == name]
+        case_ids = rows['CaseMasterID'].dropna().astype(int).tolist()
+        cases = df_case[df_case['CaseMasterID'].isin(case_ids)]
+        options.append({
+            "name": name,
+            "caseCount": int(case_count),
+            "districtCount": int(cases['_DistrictID'].nunique()),
+            "latestDate": str(cases['CrimeRegisteredDate'].max()) if not cases.empty else None,
+        })
+    return {"profiles": options}
+
+@app.get("/api/reconstruction-options")
+def get_reconstruction_options(limit: int = Query(40, ge=5, le=100)):
+    eligible = df_case[
+        df_case['IncidentFromDate'].notna()
+        & df_case['latitude'].notna()
+        & df_case['longitude'].notna()
+    ].sort_values('CrimeRegisteredDate', ascending=False).head(limit)
+    return {"cases": [{
+        "caseId": int(row['CaseMasterID']),
+        "crimeNo": str(row['CrimeNo']),
+        "crimeType": str(row['_SubheadName']),
+        "district": get_district_name(row['_DistrictID']),
+        "date": str(row['CrimeRegisteredDate']),
+    } for _, row in eligible.iterrows()]}
 
 def build_computed_crime_networks(group_name=None):
     group_specs = [

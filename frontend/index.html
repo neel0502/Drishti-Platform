@@ -348,6 +348,11 @@
 
         <!-- PANEL: INCIDENT RECONSTRUCTION -->
         <section class="content-panel" id="reconstruction-panel">
+          <div class="context-selector-bar">
+            <div><span class="eyebrow">SELECT CASE CONTEXT</span><strong>Choose an FIR to reconstruct</strong></div>
+            <select id="reconstruction-case-select" class="context-select"><option value="">Loading validated FIRs…</option></select>
+            <button id="reconstruction-load-case" class="btn btn-primary" type="button">Load reconstruction</button>
+          </div>
           <div class="reconstruction-header panel-card">
             <div>
               <div class="header-muted-label">Evidence-aware timeline</div>
@@ -400,14 +405,20 @@
         
         <!-- PANEL: INTELLIGENCE PROFILE -->
         <section class="content-panel" id="profile-panel">
+          <div class="context-selector-bar">
+            <div><span class="eyebrow">SELECT PERSON CONTEXT</span><strong>Choose a linked accused record</strong></div>
+            <select id="profile-person-select" class="context-select"><option value="">Loading linked people…</option></select>
+            <button id="profile-load-person" class="btn btn-primary" type="button">Open profile</button>
+          </div>
+          <div id="profile-load-state" class="analysis-note">Select a person to load evidence-linked identifiers, FIR history, movement and associates.</div>
           <div class="profile-header-area">
             <div class="profile-title-row">
-              <h2 id="profile-name">Kiran Kumar</h2>
-              <span class="status-pill red-pill large" id="profile-risk-pill">HIGH RISK OFFENDER</span>
-              <span class="status-pill border-pill large" id="profile-status-pill">AT LARGE</span>
+              <h2 id="profile-name">No profile selected</h2>
+              <span class="status-pill border-pill large" id="profile-risk-pill">AWAITING DATA</span>
+              <span class="status-pill border-pill large" id="profile-status-pill">—</span>
             </div>
-            <div class="profile-alias" id="profile-alias">alias Drill Kiran, Kiran Naik</div>
-            <div class="profile-meta-subtitle" id="profile-demographics">Age 34 · Male · From Dharwad · Last seen Belagavi Nov 2024</div>
+            <div class="profile-alias" id="profile-alias"></div>
+            <div class="profile-meta-subtitle" id="profile-demographics">Choose a linked accused record above.</div>
           </div>
           
           <div class="columns-grid" style="margin-top: 20px;">

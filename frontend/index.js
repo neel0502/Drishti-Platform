@@ -88,6 +88,39 @@ function initOperationalShell() {
   });
 }
 
+async function fetchJson(path) {
+  const response = await fetch(`${API_BASE}${path}`, { cache:"no-store" });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.detail || `Request failed (${response.status})`);
+  return body;
+}
+
+async function initContextSelectors() {
+  const profileSelect = document.getElementById("profile-person-select");
+  const caseSelect = document.getElementById("reconstruction-case-select");
+  try {
+    const [profiles, cases] = await Promise.all([
+      fetchJson("/profile-options"),
+      fetchJson("/reconstruction-options")
+    ]);
+    profileSelect.innerHTML = profiles.profiles.map(item =>
+      `<option value="${escapeLab(item.name)}">${escapeLab(item.name)} · ${item.caseCount} FIRs · ${item.districtCount} districts</option>`
+    ).join("");
+    caseSelect.innerHTML = cases.cases.map(item =>
+      `<option value="${item.caseId}">FIR ${escapeLab(item.crimeNo)} · ${escapeLab(item.crimeType)} · ${escapeLab(item.district)}</option>`
+    ).join("");
+  } catch (error) {
+    profileSelect.innerHTML = `<option value="">Profiles unavailable: ${escapeLab(error.message)}</option>`;
+    caseSelect.innerHTML = `<option value="">Cases unavailable: ${escapeLab(error.message)}</option>`;
+  }
+  document.getElementById("profile-load-person").addEventListener("click", () => {
+    if (profileSelect.value) loadSuspectProfile(profileSelect.value);
+  });
+  document.getElementById("reconstruction-load-case").addEventListener("click", () => {
+    if (caseSelect.value) loadIncidentReconstruction(caseSelect.value);
+  });
+}
+
 function updateWorkspaceHeader(target) {
   const [group, title] = workspaceMeta[target] || ["Operations","Drishti Workspace"];
   document.getElementById("workspace-group").textContent = group;
@@ -119,6 +152,7 @@ async function initializeDashboardData() {
     fetchSituationsData(),
     fetchNetworkGroups()
   ]);
+  await initContextSelectors();
 }
 
 // ─── ANALYTICS LABS ──────────────────────────────────────────────────────
@@ -317,8 +351,6 @@ function initNavigation() {
         else if (target === "patrol") runPatrolPlan();
         else if (target === "quality") runQualityAudit();
         else if (target === "forecast") runForecastBacktest();
-        else if (target === "profile") loadSuspectProfile("Kiran Kumar");
-        else if (target === "reconstruction") loadIncidentReconstruction(50005);
       }
       
       // Resize/reinitialize maps & graphs on transition to ensure correct dimensions
@@ -1036,9 +1068,7 @@ function initReconstruction() {
 async function loadIncidentReconstruction(caseId) {
   try {
     labLoaded.add("reconstruction");
-    const response = await fetch(`${API_BASE}/cases/${encodeURIComponent(caseId)}/reconstruction`);
-    if (!response.ok) throw new Error(`Reconstruction request failed: ${response.status}`);
-    reconstructionData = await response.json();
+    reconstructionData = await fetchJson(`/cases/${encodeURIComponent(caseId)}/reconstruction`);
     const pdfButton = document.getElementById("btn-case-pdf");
     pdfButton.href = `${API_BASE}/cases/${encodeURIComponent(caseId)}/brief.pdf`;
     pdfButton.classList.remove("disabled-link");
@@ -1057,6 +1087,8 @@ async function loadIncidentReconstruction(caseId) {
     slider.value = 0;
   } catch (error) {
     console.error("Unable to reconstruct incident:", error);
+    document.getElementById("reconstruction-title").textContent = "Unable to load reconstruction";
+    document.getElementById("reconstruction-summary").textContent = error.message;
   }
 }
 
@@ -1196,13 +1228,15 @@ async function submitOperationalAction(approved) {
 async function loadSuspectProfile(name) {
   try {
     labLoaded.add("profile");
-    const res = await fetch(`${API_BASE}/profile/${encodeURIComponent(name)}`);
-    const data = await res.json();
+    const state = document.getElementById("profile-load-state");
+    state.className = "analysis-note";
+    state.textContent = `Loading evidence linked to ${name}…`;
+    const data = await fetchJson(`/profile/${encodeURIComponent(name)}`);
     
     // Render text data
     document.getElementById("profile-name").textContent = data.name;
     document.getElementById("profile-alias").textContent = data.alias ? `alias ${data.alias}` : '';
-    document.getElementById("profile-demographics").textContent = `Age ${data.age} · ${data.gender} · From ${data.contactInfo.address.split(';')[0]} · Last seen: ${data.lastSeen}`;
+    document.getElementById("profile-demographics").textContent = `${data.age == null ? "Age unavailable" : `Age ${data.age}`} · Gender ${data.gender} · Last linked FIR: ${data.lastSeen}`;
     
     // Status badges
     const riskPill = document.getElementById("profile-risk-pill");
@@ -1258,9 +1292,16 @@ async function loadSuspectProfile(name) {
       renderProfilePathMap(data.movement);
       profileMap?.invalidateSize(true);
     }, 120);
+    state.className = "analysis-note";
+    state.textContent = `${data.timeline.length} linked FIRs and ${data.movement.length} mapped incident coordinates loaded from Catalyst.`;
     
   } catch (err) {
     console.error("Failed loading suspect profile:", err);
+    const state = document.getElementById("profile-load-state");
+    state.className = "analysis-note warning";
+    state.textContent = `Profile unavailable: ${err.message}`;
+    document.getElementById("profile-name").textContent = "Profile could not be loaded";
+    document.getElementById("profile-timeline").innerHTML = `<div class="empty-state-detail"><p>${escapeLab(err.message)}</p></div>`;
   }
 }
 
@@ -1371,7 +1412,11 @@ function renderNetworkCanvas(graphData) {
     networkInstance.destroy();
     networkInstance = null;
   }
-  
+  // Use the deterministic SVG renderer in production. It cannot disappear
+  // because of canvas sizing, CDN timing, or physics stabilization.
+  renderNetworkFallback(container, graphData);
+  return;
+
   // Vis.js formats
   const nodeCount = graphData.nodes.length;
   const nodes = new vis.DataSet(graphData.nodes.map((n, index) => {
@@ -1443,6 +1488,31 @@ function renderNetworkCanvas(graphData) {
       }
     }
   });
+}
+
+function renderNetworkFallback(container, graphData) {
+  const width = Math.max(container.clientWidth, 720);
+  const height = Math.max(container.clientHeight, 480);
+  const positions = new Map(graphData.nodes.map((node,index) => {
+    const angle = index / Math.max(1,graphData.nodes.length) * Math.PI * 2 - Math.PI/2;
+    return [node.id, { x:width/2 + Math.cos(angle)*width*.31, y:height/2 + Math.sin(angle)*height*.3 }];
+  }));
+  const edges = graphData.edges.map(edge => {
+    const from=positions.get(edge.from), to=positions.get(edge.to);
+    return `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" stroke="${edge.color || "#527da3"}" stroke-width="${Math.max(1,edge.width||1)}" opacity=".8"/>`;
+  }).join("");
+  const nodes = graphData.nodes.map(node => {
+    const point=positions.get(node.id), label=escapeLab(node.label).replace(/\n/g," ");
+    const box=node.group==="asset";
+    return `<g class="fallback-network-node" data-profile="${node.group==="suspect" ? escapeLab(node.id):""}">
+      ${box ? `<rect x="${point.x-65}" y="${point.y-24}" width="130" height="48" rx="8" fill="${node.color}" stroke="#d9eeff" stroke-width="2"/>` : `<circle cx="${point.x}" cy="${point.y}" r="${Math.max(16,node.size||15)}" fill="${node.color}" stroke="#d9eeff" stroke-width="2"/>`}
+      <text x="${point.x}" y="${point.y + (box ? 4 : (node.size||15)+19)}" fill="#eef7ff" text-anchor="middle" font-size="12" font-family="Manrope">${label}</text>
+    </g>`;
+  }).join("");
+  container.innerHTML = `<svg class="fallback-network-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Crime relationship network">${edges}${nodes}</svg>`;
+  container.querySelectorAll("[data-profile]:not([data-profile=''])").forEach(node =>
+    node.addEventListener("dblclick", () => loadSuspectProfile(node.dataset.profile))
+  );
 }
 
 // ─── SCREEN 6: SITUATIONS (ALERTS FEED) ───────────────────────────────────
