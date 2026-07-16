@@ -8,12 +8,31 @@ if [ "$ENVIRONMENT" = "production" ]; then
   PRODUCTION_FLAG="--production"
 fi
 
-for config in "$STAGE_DIR"/*.import.json; do
-  table="$(basename "$config" .import.json)"
+TABLES="
+District
+Unit
+CrimeHead
+CrimeSubHead
+CaseStatusMaster
+OccupationMaster
+CaseMaster
+Accused
+Victim
+ComplainantDetails
+ArrestSurrender
+ChargesheetDetails
+"
+
+for table in $TABLES; do
+  config="$STAGE_DIR/$table.import.json"
   csv="$STAGE_DIR/$table.csv"
+  if [ ! -f "$config" ]; then
+    echo "Missing import configuration: $config" >&2
+    exit 1
+  fi
   if [ ! -f "$csv" ]; then
-    echo "Skipping $table: staged CSV not found"
-    continue
+    echo "Missing staged CSV: $csv" >&2
+    exit 1
   fi
   catalyst ds:import "$csv" --config "$config" $PRODUCTION_FLAG
 done
