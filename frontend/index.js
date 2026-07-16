@@ -39,6 +39,12 @@ async function initializeDashboardData() {
     try {
       const response = await fetch(`${API_BASE}/health`, { cache: "no-store" });
       const health = await response.json();
+      if (response.ok && health.dataSource) {
+        const source = health.dataSource;
+        const label = source.active === 'catalyst' ? 'Catalyst Data Store' : source.fallback ? 'CSV Fallback Active' : 'Local CSV Dataset';
+        document.getElementById('data-source-status').textContent = label;
+        document.querySelector('.status-indicator').title = source.message || label;
+      }
       if (response.ok && health.dataLoaded) break;
     } catch (error) {
       console.debug("Backend is still starting:", error);

@@ -54,7 +54,11 @@ REST API + static web application
 Zoho Catalyst AppSail
 ```
 
-The current prototype intentionally uses local synthetic files for portability. The production path replaces them with Catalyst Data Store or an indexed relational store, background ingestion, cached aggregates, and station-level access controls.
+The application is Catalyst-first in AppSail: it hydrates the relational
+analytics layer from Catalyst Data Store through ZCQL and uses local synthetic
+CSV files only as an explicit development/demo fallback. Hypothesis boards and
+operational actions persist to dedicated Catalyst workflow tables when Data
+Store is active.
 
 ## Run locally
 

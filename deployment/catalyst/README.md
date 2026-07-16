@@ -55,3 +55,37 @@ catalyst deploy appsail --name drishti-ksp \
 - Cold-start and warm response times are recorded.
 - The public demo uses synthetic data only.
 - Production credentials and real police data are absent.
+
+## Catalyst Data Store migration
+
+Drishti now selects Catalyst Data Store automatically inside AppSail and falls
+back to local CSV files only when the SDK or required tables are unavailable.
+Set `DRISHTI_DATA_SOURCE=csv` to force local mode, or
+`DRISHTI_DATA_SOURCE=catalyst` to require a Catalyst-first attempt.
+
+1. Create the tables and columns described in `datastore-schema.json` in the
+   Catalyst console. Mark each `unique` column as unique and add the recommended
+   search indexes.
+2. Prepare a development subset:
+
+   ```bash
+   python scripts/prepare_catalyst_import.py --environment development --case-limit 2500
+   ```
+
+3. Import the staged tables:
+
+   ```bash
+   sh scripts/import_catalyst_datastore.sh development
+   ```
+
+4. For the complete dataset, enable the Catalyst production environment and run:
+
+   ```bash
+   python scripts/prepare_catalyst_import.py --environment production
+   sh scripts/import_catalyst_datastore.sh production
+   ```
+
+Catalyst development permits 5,000 rows per table and 25,000 rows overall.
+The complete Drishti relational dataset therefore cannot be imported into
+development without truncation. Production is the system of record; development
+is for workflow tables and a representative analytical subset.

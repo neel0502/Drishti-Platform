@@ -1,4 +1,5 @@
 import backend.app as analytics
+from backend import catalyst_store
 
 
 def setup_module():
@@ -199,3 +200,16 @@ def test_case_brief_pdf_is_generated():
 
     assert pdf.startswith(b"%PDF")
     assert len(pdf) > 2000
+
+
+def test_health_reports_active_data_source():
+    payload = analytics.health_check()
+
+    assert payload["dataSource"]["active"] in {"csv", "catalyst"}
+    assert "fallback" in payload["dataSource"]
+
+
+def test_catalyst_zcql_rows_are_flattened():
+    nested = {"CaseMaster": {"CaseMasterID": 7, "CrimeNo": "FIR-7"}}
+
+    assert catalyst_store._flatten_zcql_row(nested, "CaseMaster")["CaseMasterID"] == 7

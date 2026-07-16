@@ -23,6 +23,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+from backend import catalyst_store
 
 # Create FastAPI app
 app = FastAPI(title="Drishti Intelligence API")
@@ -63,6 +64,12 @@ analytics_ready = Event()
 analytics_error = None
 operational_action_log = []
 hypothesis_boards = []
+data_source_status = {
+    "requested": "csv",
+    "active": "csv",
+    "fallback": False,
+    "message": "Local schema-faithful CSV files",
+}
 
 
 @app.get("/api/health", tags=["operations"])
@@ -73,6 +80,7 @@ def health_check():
         "service": "drishti-intelligence-api",
         "dataLoaded": analytics_ready.is_set(),
         "initializationError": analytics_error,
+        "dataSource": data_source_status,
     }
 
 
@@ -166,20 +174,67 @@ def load_data():
     global df_district, df_unit, df_crime_head, df_crime_subhead, df_status, df_occupation
     global pattern_a_case_ids, pattern_b_case_ids, pattern_c_case_ids
     
-    print("Loading data files...")
-    df_case = pd.read_csv(os.path.join(OUTPUT_DIR, "CaseMaster.csv"), encoding="utf-8")
-    df_accused = pd.read_csv(os.path.join(OUTPUT_DIR, "Accused.csv"), encoding="utf-8")
-    df_victim = pd.read_csv(os.path.join(OUTPUT_DIR, "Victim.csv"), encoding="utf-8")
-    df_complainant = pd.read_csv(os.path.join(OUTPUT_DIR, "ComplainantDetails.csv"), encoding="utf-8")
-    df_arrest = pd.read_csv(os.path.join(OUTPUT_DIR, "ArrestSurrender.csv"), encoding="utf-8")
-    df_chargesheet = pd.read_csv(os.path.join(OUTPUT_DIR, "ChargesheetDetails.csv"), encoding="utf-8")
-    
-    df_district = pd.read_csv(os.path.join(OUTPUT_DIR, "District.csv"), encoding="utf-8")
-    df_unit = pd.read_csv(os.path.join(OUTPUT_DIR, "Unit.csv"), encoding="utf-8")
-    df_crime_head = pd.read_csv(os.path.join(OUTPUT_DIR, "CrimeHead.csv"), encoding="utf-8")
-    df_crime_subhead = pd.read_csv(os.path.join(OUTPUT_DIR, "CrimeSubHead.csv"), encoding="utf-8")
-    df_status = pd.read_csv(os.path.join(OUTPUT_DIR, "CaseStatusMaster.csv"), encoding="utf-8")
-    df_occupation = pd.read_csv(os.path.join(OUTPUT_DIR, "OccupationMaster.csv"), encoding="utf-8")
+    global data_source_status
+    requested = "catalyst" if catalyst_store.catalyst_requested() else "csv"
+    frames = {}
+    if requested == "catalyst":
+        try:
+            print("Loading relational records from Catalyst Data Store...")
+            catalyst_rows = catalyst_store.load_relational_tables()
+            frames = {name: pd.DataFrame(rows) for name, rows in catalyst_rows.items()}
+            if frames["CaseMaster"].empty:
+                raise RuntimeError("Catalyst CaseMaster table is empty")
+            data_source_status = {
+                "requested": "catalyst", "active": "catalyst", "fallback": False,
+                "message": "Catalyst Data Store via ZCQL",
+            }
+        except Exception as exc:
+            print(f"[WARN] Catalyst Data Store unavailable; using CSV fallback: {exc}")
+            data_source_status = {
+                "requested": "catalyst", "active": "csv", "fallback": True,
+                "message": str(exc),
+            }
+    if not frames:
+        print("Loading relational records from local CSV fallback...")
+        frames = {
+            table: pd.read_csv(os.path.join(OUTPUT_DIR, filename), encoding="utf-8")
+            for table, filename in catalyst_store.CATALYST_TABLE_FILES.items()
+        }
+        if requested == "csv":
+            data_source_status = {
+                "requested": "csv", "active": "csv", "fallback": False,
+                "message": "Local schema-faithful CSV files",
+            }
+
+    df_case = frames["CaseMaster"]
+    df_accused = frames["Accused"]
+    df_victim = frames["Victim"]
+    df_complainant = frames["ComplainantDetails"]
+    df_arrest = frames["ArrestSurrender"]
+    df_chargesheet = frames["ChargesheetDetails"]
+    df_district = frames["District"]
+    df_unit = frames["Unit"]
+    df_crime_head = frames["CrimeHead"]
+    df_crime_subhead = frames["CrimeSubHead"]
+    df_status = frames["CaseStatusMaster"]
+    df_occupation = frames["OccupationMaster"]
+
+    numeric_columns = {
+        "CaseMaster": ["CaseMasterID", "PoliceStationID", "CrimeMajorHeadID", "CrimeMinorHeadID", "CaseStatusID", "_DistrictID"],
+        "Accused": ["AccusedMasterID", "CaseMasterID"],
+        "Victim": ["VictimMasterID", "CaseMasterID"],
+        "ArrestSurrender": ["CaseMasterID", "AccusedMasterID"],
+        "ChargesheetDetails": ["CaseMasterID"],
+        "District": ["DistrictID"],
+        "Unit": ["UnitID"],
+        "CrimeHead": ["CrimeHeadID"],
+        "CaseStatusMaster": ["CaseStatusID"],
+    }
+    for table_name, columns in numeric_columns.items():
+        frame = frames[table_name]
+        for column in columns:
+            if column in frame:
+                frame[column] = pd.to_numeric(frame[column], errors="coerce")
     
     df_case['BriefFacts'] = df_case['BriefFacts'].fillna("")
     df_accused['AccusedName'] = df_accused['AccusedName'].fillna("Unknown")
@@ -1036,11 +1091,32 @@ def record_operational_action(action: OperationalActionRequest):
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     operational_action_log.append(entry)
+    if data_source_status["active"] == "catalyst":
+        try:
+            catalyst_store.insert_workflow_row("actions", {
+                "ActionID": entry["actionId"], "CaseID": entry["caseId"],
+                "ActionType": entry["actionType"], "Rationale": entry["rationale"],
+                "Approved": bool(action.approved), "Status": entry["status"],
+                "CreatedAt": entry["timestamp"],
+            })
+        except Exception as exc:
+            entry["persistenceWarning"] = str(exc)
     return entry
 
 
 @app.get("/api/actions")
 def get_operational_actions(caseId: int = None):
+    if data_source_status["active"] == "catalyst":
+        try:
+            rows = catalyst_store.fetch_workflow_rows("actions")
+            actions = [{
+                "actionId": int(row.get("ActionID", 0)), "caseId": int(row.get("CaseID", 0)),
+                "actionType": row.get("ActionType"), "rationale": row.get("Rationale"),
+                "status": row.get("Status"), "timestamp": row.get("CreatedAt"),
+            } for row in rows]
+            return {"actions": actions if caseId is None else [item for item in actions if item["caseId"] == caseId]}
+        except Exception:
+            pass
     if caseId is None:
         return {"actions": operational_action_log}
     return {"actions": [entry for entry in operational_action_log if entry['caseId'] == caseId]}
@@ -1792,6 +1868,18 @@ class HypothesisBoardRequest(BaseModel):
 
 @app.get("/api/hypotheses")
 def get_hypothesis_boards():
+    if data_source_status["active"] == "catalyst":
+        try:
+            rows = catalyst_store.fetch_workflow_rows("hypotheses")
+            return {"boards": [{
+                "id": int(row.get("BoardID", 0)), "title": row.get("Title"),
+                "hypothesis": row.get("Hypothesis"), "caseIds": row.get("CaseIDs", []),
+                "evidence": row.get("Evidence", []), "gaps": row.get("Gaps", []),
+                "status": row.get("Status", "open"), "cases": row.get("Cases", []),
+                "createdAt": row.get("CreatedAt"),
+            } for row in rows]}
+        except Exception:
+            pass
     return {"boards": hypothesis_boards}
 
 
@@ -1806,6 +1894,17 @@ def save_hypothesis_board(request: HypothesisBoardRequest):
         "cases": [{"caseId": int(row['CaseMasterID']), "crimeNo": str(row['CrimeNo']), "crimeType": str(row['_SubheadName']), "district": get_district_name(row['_DistrictID'])} for _, row in valid_cases.iterrows()],
     }
     hypothesis_boards.append(board)
+    if data_source_status["active"] == "catalyst":
+        try:
+            catalyst_store.insert_workflow_row("hypotheses", {
+                "BoardID": board["id"], "Title": board["title"],
+                "Hypothesis": board["hypothesis"], "CaseIDs": board["caseIds"],
+                "Evidence": board["evidence"], "Gaps": board["gaps"],
+                "Status": board["status"], "Cases": board["cases"],
+                "CreatedAt": board["createdAt"],
+            })
+        except Exception as exc:
+            board["persistenceWarning"] = str(exc)
     return board
 
 

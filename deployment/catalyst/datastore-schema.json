@@ -1,0 +1,23 @@
+{
+  "environmentStrategy": {
+    "development": "Workflow tables plus a representative subset; Catalyst development permits 25,000 total rows.",
+    "production": "Full schema-faithful dataset; full import requires production to be enabled."
+  },
+  "tables": [
+    {"name": "District", "unique": "DistrictID", "source": "District.csv"},
+    {"name": "Unit", "unique": "UnitID", "source": "Unit.csv", "foreignKeys": [{"local": "DistrictID", "table": "District", "reference": "DistrictID"}]},
+    {"name": "CrimeHead", "unique": "CrimeHeadID", "source": "CrimeHead.csv"},
+    {"name": "CrimeSubHead", "unique": "CrimeSubHeadID", "source": "CrimeSubHead.csv", "foreignKeys": [{"local": "CrimeHeadID", "table": "CrimeHead", "reference": "CrimeHeadID"}]},
+    {"name": "CaseStatusMaster", "unique": "CaseStatusID", "source": "CaseStatusMaster.csv"},
+    {"name": "OccupationMaster", "unique": "OccupationID", "source": "OccupationMaster.csv"},
+    {"name": "CaseMaster", "unique": "CaseMasterID", "source": "CaseMaster.csv", "indexes": ["CrimeNo", "_DistrictID", "PoliceStationID", "CrimeRegisteredDate", "CrimeMajorHeadID"], "foreignKeys": [{"local": "_DistrictID", "table": "District", "reference": "DistrictID"}, {"local": "PoliceStationID", "table": "Unit", "reference": "UnitID"}, {"local": "CrimeMajorHeadID", "table": "CrimeHead", "reference": "CrimeHeadID"}, {"local": "CaseStatusID", "table": "CaseStatusMaster", "reference": "CaseStatusID"}]},
+    {"name": "Accused", "unique": "AccusedMasterID", "source": "Accused.csv", "indexes": ["CaseMasterID", "AccusedName"], "foreignKeys": [{"local": "CaseMasterID", "table": "CaseMaster", "reference": "CaseMasterID"}]},
+    {"name": "Victim", "unique": "VictimMasterID", "source": "Victim.csv", "indexes": ["CaseMasterID"], "foreignKeys": [{"local": "CaseMasterID", "table": "CaseMaster", "reference": "CaseMasterID"}]},
+    {"name": "ComplainantDetails", "unique": "ComplainantID", "source": "ComplainantDetails.csv", "indexes": ["CaseMasterID"], "foreignKeys": [{"local": "CaseMasterID", "table": "CaseMaster", "reference": "CaseMasterID"}]},
+    {"name": "ArrestSurrender", "unique": "ArrestSurrenderID", "source": "ArrestSurrender.csv", "indexes": ["CaseMasterID", "AccusedMasterID", "ArrestSurrenderDate"], "foreignKeys": [{"local": "CaseMasterID", "table": "CaseMaster", "reference": "CaseMasterID"}, {"local": "AccusedMasterID", "table": "Accused", "reference": "AccusedMasterID"}]},
+    {"name": "ChargesheetDetails", "unique": "CSID", "source": "ChargesheetDetails.csv", "indexes": ["CaseMasterID", "csdate"], "foreignKeys": [{"local": "CaseMasterID", "table": "CaseMaster", "reference": "CaseMasterID"}]},
+    {"name": "DrishtiHypothesisBoard", "unique": "BoardID", "columns": ["BoardID", "Title", "Hypothesis", "CaseIDs", "Evidence", "Gaps", "Status", "Cases", "CreatedAt"]},
+    {"name": "DrishtiOperationalAction", "unique": "ActionID", "columns": ["ActionID", "CaseID", "ActionType", "Rationale", "Approved", "Status", "CreatedAt"]},
+    {"name": "DrishtiImportJob", "unique": "ImportID", "columns": ["ImportID", "SourceVersion", "Environment", "Status", "AcceptedRows", "RejectedRows", "ReportURL", "CreatedAt"]}
+  ]
+}

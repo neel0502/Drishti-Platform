@@ -28,7 +28,7 @@ generate_data.py
 .env
 .env.*
 .appsail-build/
-
+.catalyst-migration/
 
 
 
