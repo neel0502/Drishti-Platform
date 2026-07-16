@@ -18,6 +18,19 @@ CATALYST_TABLE_FILES = {
     "CrimeSubHead": "CrimeSubHead.csv",
     "CaseStatusMaster": "CaseStatusMaster.csv",
     "OccupationMaster": "OccupationMaster.csv",
+    "State": "State.csv",
+    "UnitType": "UnitType.csv",
+    "Rank": "Rank.csv",
+    "Designation": "Designation.csv",
+    "Employee": "Employee.csv",
+    "Court": "Court.csv",
+    "CaseCategory": "CaseCategory.csv",
+    "GravityOffence": "GravityOffence.csv",
+    "ReligionMaster": "ReligionMaster.csv",
+    "CasteMaster": "CasteMaster.csv",
+    "Act": "Act.csv",
+    "Section": "Section.csv",
+    "ActSectionAssociation": "ActSectionAssociation.csv",
 }
 
 WORKFLOW_TABLES = {

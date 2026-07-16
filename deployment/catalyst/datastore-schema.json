@@ -1,23 +1,450 @@
 {
+  "schemaAuthority": "Police_FIR_ER_Diagram (1).pdf",
+  "notes": [
+    "This manifest is the Catalyst implementation of the supplied nine-page Police FIR ER design.",
+    "ActSectionAssociation.ActID is retained for CSV compatibility but is VARCHAR and references Act.ActCode.",
+    "SectionKey and AssociationKey are deterministic import keys added because Catalyst upsert requires a single unique field.",
+    "Incident time and location remain in CaseMaster; the undefined Inv_OccuranceTime relationship is not implemented.",
+    "The undefined inv_arrestsurrenderaccused bridge is not created because the supplied ArrestSurrender data already contains AccusedMasterID."
+  ],
   "environmentStrategy": {
-    "development": "Workflow tables plus a representative subset; Catalyst development permits 25,000 total rows.",
-    "production": "Full schema-faithful dataset; full import requires production to be enabled."
+    "development": "Full schema with a representative case-linked subset under Catalyst development quotas.",
+    "production": "Full schema and complete source dataset."
   },
   "tables": [
-    {"name": "District", "unique": "DistrictID", "source": "District.csv"},
-    {"name": "Unit", "unique": "UnitID", "source": "Unit.csv", "foreignKeys": [{"local": "DistrictID", "table": "District", "reference": "DistrictID"}]},
-    {"name": "CrimeHead", "unique": "CrimeHeadID", "source": "CrimeHead.csv"},
-    {"name": "CrimeSubHead", "unique": "CrimeSubHeadID", "source": "CrimeSubHead.csv", "foreignKeys": [{"local": "CrimeHeadID", "table": "CrimeHead", "reference": "CrimeHeadID"}]},
-    {"name": "CaseStatusMaster", "unique": "CaseStatusID", "source": "CaseStatusMaster.csv"},
-    {"name": "OccupationMaster", "unique": "OccupationID", "source": "OccupationMaster.csv"},
-    {"name": "CaseMaster", "unique": "CaseMasterID", "source": "CaseMaster.csv", "indexes": ["CrimeNo", "_DistrictID", "PoliceStationID", "CrimeRegisteredDate", "CrimeMajorHeadID"], "foreignKeys": [{"local": "_DistrictID", "table": "District", "reference": "DistrictID"}, {"local": "PoliceStationID", "table": "Unit", "reference": "UnitID"}, {"local": "CrimeMajorHeadID", "table": "CrimeHead", "reference": "CrimeHeadID"}, {"local": "CaseStatusID", "table": "CaseStatusMaster", "reference": "CaseStatusID"}]},
-    {"name": "Accused", "unique": "AccusedMasterID", "source": "Accused.csv", "indexes": ["CaseMasterID", "AccusedName"], "foreignKeys": [{"local": "CaseMasterID", "table": "CaseMaster", "reference": "CaseMasterID"}]},
-    {"name": "Victim", "unique": "VictimMasterID", "source": "Victim.csv", "indexes": ["CaseMasterID"], "foreignKeys": [{"local": "CaseMasterID", "table": "CaseMaster", "reference": "CaseMasterID"}]},
-    {"name": "ComplainantDetails", "unique": "ComplainantID", "source": "ComplainantDetails.csv", "indexes": ["CaseMasterID"], "foreignKeys": [{"local": "CaseMasterID", "table": "CaseMaster", "reference": "CaseMasterID"}]},
-    {"name": "ArrestSurrender", "unique": "ArrestSurrenderID", "source": "ArrestSurrender.csv", "indexes": ["CaseMasterID", "AccusedMasterID", "ArrestSurrenderDate"], "foreignKeys": [{"local": "CaseMasterID", "table": "CaseMaster", "reference": "CaseMasterID"}, {"local": "AccusedMasterID", "table": "Accused", "reference": "AccusedMasterID"}]},
-    {"name": "ChargesheetDetails", "unique": "CSID", "source": "ChargesheetDetails.csv", "indexes": ["CaseMasterID", "csdate"], "foreignKeys": [{"local": "CaseMasterID", "table": "CaseMaster", "reference": "CaseMasterID"}]},
-    {"name": "DrishtiHypothesisBoard", "unique": "BoardID", "columns": ["BoardID", "Title", "Hypothesis", "CaseIDs", "Evidence", "Gaps", "Status", "Cases", "CreatedAt"]},
-    {"name": "DrishtiOperationalAction", "unique": "ActionID", "columns": ["ActionID", "CaseID", "ActionType", "Rationale", "Approved", "Status", "CreatedAt"]},
-    {"name": "DrishtiImportJob", "unique": "ImportID", "columns": ["ImportID", "SourceVersion", "Environment", "Status", "AcceptedRows", "RejectedRows", "ReportURL", "CreatedAt"]}
+    {
+      "name": "State",
+      "source": "State.csv",
+      "unique": "StateID",
+      "columns": {
+        "StateID": "BIGINT",
+        "StateName": "VARCHAR",
+        "NationalityID": "BIGINT",
+        "Active": "BOOLEAN"
+      }
+    },
+    {
+      "name": "District",
+      "source": "District.csv",
+      "unique": "DistrictID",
+      "columns": {
+        "DistrictID": "BIGINT",
+        "DistrictName": "VARCHAR",
+        "StateID": "BIGINT",
+        "Active": "BOOLEAN"
+      },
+      "foreignKeys": [
+        {"local": "StateID", "table": "State", "reference": "StateID"}
+      ]
+    },
+    {
+      "name": "UnitType",
+      "source": "UnitType.csv",
+      "unique": "UnitTypeID",
+      "columns": {
+        "UnitTypeID": "BIGINT",
+        "UnitTypeName": "VARCHAR",
+        "CityDistState": "VARCHAR",
+        "Hierarchy": "BIGINT",
+        "Active": "BOOLEAN"
+      }
+    },
+    {
+      "name": "Unit",
+      "source": "Unit.csv",
+      "unique": "UnitID",
+      "columns": {
+        "UnitID": "BIGINT",
+        "UnitName": "VARCHAR",
+        "TypeID": "BIGINT",
+        "ParentUnit": "BIGINT",
+        "StateID": "BIGINT",
+        "DistrictID": "BIGINT",
+        "Active": "BOOLEAN"
+      },
+      "indexes": ["TypeID", "ParentUnit", "StateID", "DistrictID"],
+      "foreignKeys": [
+        {"local": "TypeID", "table": "UnitType", "reference": "UnitTypeID"},
+        {"local": "ParentUnit", "table": "Unit", "reference": "UnitID", "optional": true},
+        {"local": "StateID", "table": "State", "reference": "StateID"},
+        {"local": "DistrictID", "table": "District", "reference": "DistrictID"}
+      ]
+    },
+    {
+      "name": "Rank",
+      "source": "Rank.csv",
+      "unique": "RankID",
+      "columns": {
+        "RankID": "BIGINT",
+        "RankName": "VARCHAR",
+        "Hierarchy": "BIGINT",
+        "Active": "BOOLEAN"
+      }
+    },
+    {
+      "name": "Designation",
+      "source": "Designation.csv",
+      "unique": "DesignationID",
+      "columns": {
+        "DesignationID": "BIGINT",
+        "DesignationName": "VARCHAR",
+        "Active": "BOOLEAN",
+        "SortOrder": "BIGINT"
+      }
+    },
+    {
+      "name": "Employee",
+      "source": "Employee.csv",
+      "unique": "EmployeeID",
+      "columns": {
+        "EmployeeID": "BIGINT",
+        "DistrictID": "BIGINT",
+        "UnitID": "BIGINT",
+        "RankID": "BIGINT",
+        "DesignationID": "BIGINT",
+        "KGID": "VARCHAR",
+        "FirstName": "VARCHAR",
+        "EmployeeDOB": "DATE",
+        "GenderID": "BIGINT",
+        "BloodGroupID": "BIGINT",
+        "PhysicallyChallenged": "BOOLEAN",
+        "AppointmentDate": "DATE"
+      },
+      "indexes": ["DistrictID", "UnitID", "RankID", "DesignationID", "KGID"],
+      "foreignKeys": [
+        {"local": "DistrictID", "table": "District", "reference": "DistrictID"},
+        {"local": "UnitID", "table": "Unit", "reference": "UnitID"},
+        {"local": "RankID", "table": "Rank", "reference": "RankID"},
+        {"local": "DesignationID", "table": "Designation", "reference": "DesignationID"}
+      ]
+    },
+    {
+      "name": "Court",
+      "source": "Court.csv",
+      "unique": "CourtID",
+      "columns": {
+        "CourtID": "BIGINT",
+        "CourtName": "VARCHAR",
+        "DistrictID": "BIGINT",
+        "StateID": "BIGINT",
+        "Active": "BOOLEAN"
+      },
+      "foreignKeys": [
+        {"local": "DistrictID", "table": "District", "reference": "DistrictID"},
+        {"local": "StateID", "table": "State", "reference": "StateID"}
+      ]
+    },
+    {
+      "name": "CaseCategory",
+      "source": "CaseCategory.csv",
+      "unique": "CaseCategoryID",
+      "columns": {
+        "CaseCategoryID": "BIGINT",
+        "LookupValue": "VARCHAR"
+      }
+    },
+    {
+      "name": "GravityOffence",
+      "source": "GravityOffence.csv",
+      "unique": "GravityOffenceID",
+      "columns": {
+        "GravityOffenceID": "BIGINT",
+        "LookupValue": "VARCHAR"
+      }
+    },
+    {
+      "name": "CrimeHead",
+      "source": "CrimeHead.csv",
+      "unique": "CrimeHeadID",
+      "columns": {
+        "CrimeHeadID": "BIGINT",
+        "CrimeGroupName": "VARCHAR",
+        "Active": "BOOLEAN"
+      }
+    },
+    {
+      "name": "CrimeSubHead",
+      "source": "CrimeSubHead.csv",
+      "unique": "CrimeSubHeadID",
+      "columns": {
+        "CrimeSubHeadID": "BIGINT",
+        "CrimeHeadID": "BIGINT",
+        "CrimeHeadName": "VARCHAR",
+        "SeqID": "BIGINT"
+      },
+      "foreignKeys": [
+        {"local": "CrimeHeadID", "table": "CrimeHead", "reference": "CrimeHeadID"}
+      ]
+    },
+    {
+      "name": "CaseStatusMaster",
+      "source": "CaseStatusMaster.csv",
+      "unique": "CaseStatusID",
+      "columns": {
+        "CaseStatusID": "BIGINT",
+        "CaseStatusName": "VARCHAR"
+      }
+    },
+    {
+      "name": "OccupationMaster",
+      "source": "OccupationMaster.csv",
+      "unique": "OccupationID",
+      "columns": {
+        "OccupationID": "BIGINT",
+        "OccupationName": "VARCHAR"
+      }
+    },
+    {
+      "name": "ReligionMaster",
+      "source": "ReligionMaster.csv",
+      "unique": "ReligionID",
+      "columns": {
+        "ReligionID": "BIGINT",
+        "ReligionName": "VARCHAR"
+      }
+    },
+    {
+      "name": "CasteMaster",
+      "source": "CasteMaster.csv",
+      "unique": "caste_master_id",
+      "columns": {
+        "caste_master_id": "BIGINT",
+        "caste_master_name": "VARCHAR"
+      }
+    },
+    {
+      "name": "Act",
+      "source": "Act.csv",
+      "unique": "ActCode",
+      "columns": {
+        "ActCode": "VARCHAR",
+        "ActDescription": "VARCHAR",
+        "ShortName": "VARCHAR",
+        "Active": "BOOLEAN"
+      }
+    },
+    {
+      "name": "Section",
+      "source": "Section.csv",
+      "unique": "SectionKey",
+      "derivedKeys": {
+        "SectionKey": ["ActCode", "SectionCode"]
+      },
+      "columns": {
+        "SectionKey": "VARCHAR",
+        "ActCode": "VARCHAR",
+        "SectionCode": "VARCHAR",
+        "SectionDescription": "VARCHAR",
+        "Active": "BOOLEAN"
+      },
+      "indexes": ["ActCode", "SectionCode"],
+      "foreignKeys": [
+        {"local": "ActCode", "table": "Act", "reference": "ActCode"}
+      ]
+    },
+    {
+      "name": "CaseMaster",
+      "source": "CaseMaster.csv",
+      "unique": "CaseMasterID",
+      "columns": {
+        "CaseMasterID": "BIGINT",
+        "CrimeNo": "VARCHAR",
+        "CaseNo": "VARCHAR",
+        "CrimeRegisteredDate": "DATE",
+        "PolicePersonID": "BIGINT",
+        "PoliceStationID": "BIGINT",
+        "CaseCategoryID": "BIGINT",
+        "GravityOffenceID": "BIGINT",
+        "CrimeMajorHeadID": "BIGINT",
+        "CrimeMinorHeadID": "BIGINT",
+        "CaseStatusID": "BIGINT",
+        "CourtID": "BIGINT",
+        "IncidentFromDate": "DATETIME",
+        "IncidentToDate": "DATETIME",
+        "InfoReceivedPSDate": "DATETIME",
+        "latitude": "DOUBLE",
+        "longitude": "DOUBLE",
+        "BriefFacts": "TEXT",
+        "_DistrictID": "BIGINT",
+        "_SubheadName": "VARCHAR"
+      },
+      "indexes": ["CrimeNo", "_DistrictID", "PoliceStationID", "CrimeRegisteredDate", "CrimeMajorHeadID", "CrimeMinorHeadID"],
+      "foreignKeys": [
+        {"local": "PolicePersonID", "table": "Employee", "reference": "EmployeeID"},
+        {"local": "PoliceStationID", "table": "Unit", "reference": "UnitID"},
+        {"local": "CaseCategoryID", "table": "CaseCategory", "reference": "CaseCategoryID"},
+        {"local": "GravityOffenceID", "table": "GravityOffence", "reference": "GravityOffenceID"},
+        {"local": "CrimeMajorHeadID", "table": "CrimeHead", "reference": "CrimeHeadID"},
+        {"local": "CrimeMinorHeadID", "table": "CrimeSubHead", "reference": "CrimeSubHeadID"},
+        {"local": "CaseStatusID", "table": "CaseStatusMaster", "reference": "CaseStatusID"},
+        {"local": "CourtID", "table": "Court", "reference": "CourtID"},
+        {"local": "_DistrictID", "table": "District", "reference": "DistrictID"}
+      ]
+    },
+    {
+      "name": "Victim",
+      "source": "Victim.csv",
+      "unique": "VictimMasterID",
+      "columns": {
+        "VictimMasterID": "BIGINT",
+        "CaseMasterID": "BIGINT",
+        "VictimName": "VARCHAR",
+        "AgeYear": "BIGINT",
+        "GenderID": "BIGINT",
+        "VictimPolice": "VARCHAR"
+      },
+      "indexes": ["CaseMasterID"],
+      "foreignKeys": [
+        {"local": "CaseMasterID", "table": "CaseMaster", "reference": "CaseMasterID"}
+      ]
+    },
+    {
+      "name": "Accused",
+      "source": "Accused.csv",
+      "unique": "AccusedMasterID",
+      "columns": {
+        "AccusedMasterID": "BIGINT",
+        "CaseMasterID": "BIGINT",
+        "AccusedName": "VARCHAR",
+        "AgeYear": "BIGINT",
+        "GenderID": "BIGINT",
+        "PersonID": "VARCHAR"
+      },
+      "indexes": ["CaseMasterID", "AccusedName"],
+      "foreignKeys": [
+        {"local": "CaseMasterID", "table": "CaseMaster", "reference": "CaseMasterID"}
+      ]
+    },
+    {
+      "name": "ComplainantDetails",
+      "source": "ComplainantDetails.csv",
+      "unique": "ComplainantID",
+      "columns": {
+        "ComplainantID": "BIGINT",
+        "CaseMasterID": "BIGINT",
+        "ComplainantName": "VARCHAR",
+        "AgeYear": "BIGINT",
+        "OccupationID": "BIGINT",
+        "ReligionID": "BIGINT",
+        "CasteID": "BIGINT",
+        "GenderID": "BIGINT"
+      },
+      "indexes": ["CaseMasterID"],
+      "foreignKeys": [
+        {"local": "CaseMasterID", "table": "CaseMaster", "reference": "CaseMasterID"},
+        {"local": "OccupationID", "table": "OccupationMaster", "reference": "OccupationID"},
+        {"local": "ReligionID", "table": "ReligionMaster", "reference": "ReligionID"},
+        {"local": "CasteID", "table": "CasteMaster", "reference": "caste_master_id"}
+      ]
+    },
+    {
+      "name": "ActSectionAssociation",
+      "source": "ActSectionAssociation.csv",
+      "unique": "AssociationKey",
+      "derivedKeys": {
+        "AssociationKey": ["CaseMasterID", "ActID", "SectionID", "ActOrderID", "SectionOrderID"]
+      },
+      "columns": {
+        "AssociationKey": "VARCHAR",
+        "CaseMasterID": "BIGINT",
+        "ActID": "VARCHAR",
+        "SectionID": "VARCHAR",
+        "ActOrderID": "BIGINT",
+        "SectionOrderID": "BIGINT"
+      },
+      "indexes": ["CaseMasterID", "ActID", "SectionID"],
+      "foreignKeys": [
+        {"local": "CaseMasterID", "table": "CaseMaster", "reference": "CaseMasterID"},
+        {"local": "ActID", "table": "Act", "reference": "ActCode"}
+      ]
+    },
+    {
+      "name": "ArrestSurrender",
+      "source": "ArrestSurrender.csv",
+      "unique": "ArrestSurrenderID",
+      "columns": {
+        "ArrestSurrenderID": "BIGINT",
+        "CaseMasterID": "BIGINT",
+        "ArrestSurrenderTypeID": "BIGINT",
+        "ArrestSurrenderDate": "DATE",
+        "ArrestSurrenderStateId": "BIGINT",
+        "ArrestSurrenderDistrictId": "BIGINT",
+        "PoliceStationID": "BIGINT",
+        "IOID": "BIGINT",
+        "CourtID": "BIGINT",
+        "AccusedMasterID": "BIGINT",
+        "IsAccused": "BOOLEAN",
+        "IsComplainantAccused": "BOOLEAN"
+      },
+      "indexes": ["CaseMasterID", "AccusedMasterID", "ArrestSurrenderDate"],
+      "foreignKeys": [
+        {"local": "CaseMasterID", "table": "CaseMaster", "reference": "CaseMasterID"},
+        {"local": "ArrestSurrenderStateId", "table": "State", "reference": "StateID"},
+        {"local": "ArrestSurrenderDistrictId", "table": "District", "reference": "DistrictID"},
+        {"local": "PoliceStationID", "table": "Unit", "reference": "UnitID"},
+        {"local": "IOID", "table": "Employee", "reference": "EmployeeID"},
+        {"local": "CourtID", "table": "Court", "reference": "CourtID"},
+        {"local": "AccusedMasterID", "table": "Accused", "reference": "AccusedMasterID"}
+      ]
+    },
+    {
+      "name": "ChargesheetDetails",
+      "source": "ChargesheetDetails.csv",
+      "unique": "CSID",
+      "columns": {
+        "CSID": "BIGINT",
+        "CaseMasterID": "BIGINT",
+        "csdate": "DATETIME",
+        "cstype": "VARCHAR",
+        "PolicePersonID": "BIGINT"
+      },
+      "indexes": ["CaseMasterID", "csdate"],
+      "foreignKeys": [
+        {"local": "CaseMasterID", "table": "CaseMaster", "reference": "CaseMasterID"},
+        {"local": "PolicePersonID", "table": "Employee", "reference": "EmployeeID"}
+      ]
+    },
+    {
+      "name": "DrishtiHypothesisBoard",
+      "unique": "BoardID",
+      "columns": {
+        "BoardID": "VARCHAR",
+        "Title": "VARCHAR",
+        "Hypothesis": "TEXT",
+        "CaseIDs": "TEXT",
+        "Evidence": "TEXT",
+        "Gaps": "TEXT",
+        "Status": "VARCHAR",
+        "Cases": "TEXT",
+        "CreatedAt": "DATETIME"
+      }
+    },
+    {
+      "name": "DrishtiOperationalAction",
+      "unique": "ActionID",
+      "columns": {
+        "ActionID": "VARCHAR",
+        "CaseID": "BIGINT",
+        "ActionType": "VARCHAR",
+        "Rationale": "TEXT",
+        "Approved": "BOOLEAN",
+        "Status": "VARCHAR",
+        "CreatedAt": "DATETIME"
+      }
+    },
+    {
+      "name": "DrishtiImportJob",
+      "unique": "ImportID",
+      "columns": {
+        "ImportID": "VARCHAR",
+        "SourceVersion": "VARCHAR",
+        "Environment": "VARCHAR",
+        "Status": "VARCHAR",
+        "AcceptedRows": "BIGINT",
+        "RejectedRows": "BIGINT",
+        "ReportURL": "VARCHAR",
+        "CreatedAt": "DATETIME"
+      }
+    }
   ]
 }

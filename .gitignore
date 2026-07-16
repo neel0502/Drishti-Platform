@@ -30,7 +30,7 @@ generate_data.py
 .appsail-build/
 .catalyst-migration/
 catalyst-debug.log
-
+tmp/pdfs/
 
 
 

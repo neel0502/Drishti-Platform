@@ -64,8 +64,10 @@ Set `DRISHTI_DATA_SOURCE=csv` to force local mode, or
 `DRISHTI_DATA_SOURCE=catalyst` to require a Catalyst-first attempt.
 
 1. Create the tables and columns described in `datastore-schema.json` in the
-   Catalyst console. Mark each `unique` column as unique and add the recommended
-   search indexes.
+   Catalyst console. This manifest is the implementation-ready version of the
+   supplied `Police_FIR_ER_Diagram (1).pdf`, including corrected act/section
+   keys and explicit Catalyst data types. Mark each `unique` column as unique
+   and add the recommended search indexes.
 2. Prepare a development subset:
 
    ```bash

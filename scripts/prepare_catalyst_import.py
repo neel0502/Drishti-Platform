@@ -22,6 +22,13 @@ def clean_frame(frame):
     return cleaned.replace({pd.NA: "", float("nan"): ""})
 
 
+def add_derived_keys(frame, table):
+    derived = table.get("derivedKeys", {})
+    for target, source_columns in derived.items():
+        frame[target] = frame[source_columns].fillna("").astype(str).agg("::".join, axis=1)
+    return frame
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--environment", choices=("development", "production"), default="development")
@@ -46,6 +53,7 @@ def main():
                 selected_case_ids = set(frame["CaseMasterID"].astype(int))
             elif "CaseMasterID" in frame.columns and selected_case_ids is not None:
                 frame = frame[frame["CaseMasterID"].isin(selected_case_ids)]
+        frame = add_derived_keys(frame, table)
         unique = table["unique"]
         duplicate_count = int(frame.duplicated(unique).sum())
         frame = frame.drop_duplicates(unique)
