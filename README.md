@@ -23,6 +23,12 @@ It turns synthetic SCRB-style records into a state-level command dashboard, geog
 - Pattern-discovery laboratory that clusters a selected FIR slice at request time and links every result to representative cases
 - Case lifecycle intelligence with FIR-to-arrest and FIR-to-chargesheet timing, exception counts, and station bottlenecks
 - Patrol resource scenarios that allocate a fixed unit pool against explainable 90-day historical demand
+- What-if patrol controls for shift, recency weighting, severity weighting, and comparison against the default allocation baseline
+- Data Quality Command Centre for completeness, duplicate narratives, geography, chronology, and referential-integrity checks
+- Investigation Hypothesis Board for testable theories, linked FIRs, supporting evidence, and explicit evidence gaps
+- Downloadable evidence-based PDF case briefs with timelines, linked FIR signals, missing evidence, and responsible-use notices
+- Retrospective forecast backtesting with actual-vs-predicted charts and comparison to a naive baseline
+- Responsive desktop, tablet, and mobile layouts with collapsible navigation and touch-friendly maps and tables
 
 ## Architecture
 
@@ -36,6 +42,9 @@ FastAPI ingestion and analytics
   |-- interactive narrative clustering
   |-- lifecycle joins and delay analysis
   |-- explainable patrol demand allocation
+  |-- schema and data-quality observability
+  |-- historical forecast validation
+  |-- PDF case-brief generation
   |-- NetworkX link analysis
           |
           v

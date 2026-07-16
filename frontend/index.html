@@ -82,6 +82,9 @@
           <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M20.5 3 15 5.1 9 3 3.5 4.9A.75.75 0 0 0 3 5.6V21l6-2.1 6 2.1 6-2.1V3.7a.75.75 0 0 0-.5-.7zM10 5.4l4 1.4v11.8l-4-1.4V5.4z"/></svg>
           Patrol Planner
         </a>
+        <a href="#" class="nav-link" data-target="quality"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 3h18v18H3V3zm4 4v2h10V7H7zm0 4v2h7v-2H7zm0 4v2h4v-2H7z"/></svg>Data Quality</a>
+        <a href="#" class="nav-link" data-target="hypotheses"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M9 2h6v2h4a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2h4V2zm2 2h2V3h-2v1zm-4 5v2h10V9H7zm0 4v2h7v-2H7z"/></svg>Hypothesis Board</a>
+        <a href="#" class="nav-link" data-target="forecast"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 19h18v2H3V3h2v13l4-4 3 3 6-7 2 1.7-8 9.3-3-3-4 4v-1z"/></svg>Forecast Validation</a>
       </nav>
       
       <div class="sidebar-bottom">
@@ -103,6 +106,7 @@
       
       <!-- HEADER -->
       <header class="app-header">
+        <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Open navigation">☰</button>
         <div class="header-left">
           <h1 id="header-greeting">Good morning, DGP Sharma</h1>
         </div>
@@ -365,6 +369,7 @@
                 <div class="card-header"><h3>Operational Decision Support</h3></div>
                 <div id="reconstruction-decision"></div>
                 <div class="flex-actions-row reconstruction-actions">
+                  <a class="btn btn-secondary disabled-link" id="btn-case-pdf" href="#" aria-disabled="true">Download PDF Brief</a>
                   <button class="btn btn-secondary" id="btn-request-review" disabled>Request Analyst Review</button>
                   <button class="btn btn-primary" id="btn-approve-coordination" disabled>Approve District Coordination</button>
                 </div>
@@ -624,9 +629,27 @@
 
         <section class="content-panel" id="patrol-panel">
           <div class="lab-hero"><div><span class="eyebrow">RESOURCE SCENARIO</span><h2>Patrol and resource planning</h2><p>Allocate a limited number of patrol units against recent, weighted incident demand.</p></div><div class="method-chip amber">Supervisor approval required</div></div>
-          <div class="panel-card lab-controls"><select id="patrol-district" class="filter-select"></select><label class="unit-label">Available units <input id="patrol-units" class="lab-input short" type="number" min="1" max="50" value="8"></label><button id="patrol-run" class="btn btn-primary">Build deployment scenario</button></div>
+          <div class="panel-card lab-controls"><select id="patrol-district" class="filter-select"></select><label class="unit-label">Units <input id="patrol-units" class="lab-input short" type="number" min="1" max="50" value="8"></label><label class="unit-label">Heinous weight <input id="patrol-heinous" class="lab-input short" type="number" min="0" max="5" step="0.25" value="1.5"></label><label class="unit-label">Recency weight <input id="patrol-recency" class="lab-input short" type="number" min="0" max="5" step="0.25" value="0.75"></label><label class="unit-label">Shift <select id="patrol-shift" class="filter-select"><option value="0-23">Full day</option><option value="6-14">06:00–14:00</option><option value="14-22">14:00–22:00</option><option value="22-6">22:00–06:00</option></select></label><button id="patrol-run" class="btn btn-primary">Compare scenario</button></div>
           <div class="columns-grid"><div class="grid-col col-60"><div class="panel-card"><div class="card-header"><h3>Priority deployment zones</h3><span id="patrol-window" class="header-muted-label"></span></div><div id="patrol-map" class="planning-map"></div></div></div><div class="grid-col col-40"><div id="patrol-summary" class="metric-grid vertical"></div><div id="patrol-note" class="analysis-note"></div></div></div>
           <div id="patrol-zones" class="lab-grid compact"></div>
+        </section>
+
+        <section class="content-panel" id="quality-panel">
+          <div class="lab-hero"><div><span class="eyebrow">SCHEMA OBSERVABILITY</span><h2>Data Quality Command Centre</h2><p>Measure completeness, duplicated narratives, invalid geography, chronology conflicts, and referential integrity.</p></div><div class="method-chip amber">Model readiness gate</div></div>
+          <div class="panel-card lab-controls"><select id="quality-district" class="filter-select"><option value="">All Karnataka</option></select><button id="quality-run" class="btn btn-primary">Run quality audit</button></div>
+          <div id="quality-summary" class="metric-grid"></div><div id="quality-checks" class="lab-grid compact"></div>
+          <div class="columns-grid"><div class="grid-col col-60"><div class="panel-card"><div class="card-header"><h3>District issue rates</h3></div><div class="cases-table-wrapper"><table class="data-table"><thead><tr><th>District</th><th>Records</th><th>Issues</th><th>Issue rate</th></tr></thead><tbody id="quality-table"></tbody></table></div></div></div><div class="grid-col col-40"><div class="panel-card"><div class="card-header"><h3>Remediation priorities</h3></div><ol id="quality-recommendations" class="decision-list"></ol></div></div></div>
+        </section>
+
+        <section class="content-panel" id="hypotheses-panel">
+          <div class="lab-hero"><div><span class="eyebrow">ANALYST WORKSPACE</span><h2>Investigation Hypothesis Board</h2><p>Combine case IDs, supporting observations, evidence gaps, and a testable investigative hypothesis.</p></div></div>
+          <div class="hypothesis-layout"><form id="hypothesis-form" class="panel-card hypothesis-form"><label>Board title<input id="hypothesis-title" class="lab-input" required placeholder="e.g. East Bengaluru chain-snatching series"></label><label>Working hypothesis<textarea id="hypothesis-text" class="lab-input lab-textarea" required placeholder="State what may connect the incidents and how it can be falsified."></textarea></label><label>Case IDs<input id="hypothesis-cases" class="lab-input" placeholder="50005, 50006, 50007"></label><label>Supporting evidence<textarea id="hypothesis-evidence" class="lab-input lab-textarea" placeholder="One observation per line"></textarea></label><label>Evidence gaps<textarea id="hypothesis-gaps" class="lab-input lab-textarea" placeholder="One missing item per line"></textarea></label><button class="btn btn-primary" type="submit">Save investigation board</button><div id="hypothesis-status" class="header-muted-label"></div></form><div><div class="card-header"><h3>Saved boards</h3><span class="header-muted-label">Prototype audit workspace</span></div><div id="hypothesis-boards" class="lab-grid"></div></div></div>
+        </section>
+
+        <section class="content-panel" id="forecast-panel">
+          <div class="lab-hero"><div><span class="eyebrow">RETROSPECTIVE VALIDATION</span><h2>Crime forecast backtesting</h2><p>Hide known historical months, predict them from earlier data, and compare predictions with what actually occurred.</p></div><div class="method-chip">No future claims</div></div>
+          <div class="panel-card lab-controls"><select id="forecast-district" class="filter-select"></select><select id="forecast-category" class="filter-select"><option value="">All categories</option><option value="1">Crimes Against Body</option><option value="2">Crimes Against Property</option><option value="3">Crimes Against Women</option><option value="4">Economic Offences</option><option value="6">Cyber Crimes</option><option value="7">Drug Offences</option></select><select id="forecast-months" class="filter-select"><option value="3">3 holdout months</option><option value="6" selected>6 holdout months</option><option value="9">9 holdout months</option><option value="12">12 holdout months</option></select><button id="forecast-run" class="btn btn-primary">Run backtest</button></div>
+          <div id="forecast-metrics" class="metric-grid"></div><div class="panel-card"><div class="card-header"><h3>Predicted vs actual historical volume</h3><span id="forecast-method" class="header-muted-label"></span></div><div class="chart-container forecast-chart"><canvas id="forecast-chart"></canvas></div></div><div id="forecast-note" class="analysis-note warning"></div>
         </section>
         
       </div>

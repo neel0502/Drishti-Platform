@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 import pandas as pd
 import numpy as np
 import networkx as nx
@@ -16,6 +16,13 @@ import math
 from datetime import datetime, timedelta, timezone
 from threading import Event, Thread
 from typing import Optional
+from io import BytesIO
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 # Create FastAPI app
 app = FastAPI(title="Drishti Intelligence API")
@@ -55,6 +62,7 @@ G = nx.Graph()
 analytics_ready = Event()
 analytics_error = None
 operational_action_log = []
+hypothesis_boards = []
 
 
 @app.get("/api/health", tags=["operations"])
@@ -1659,6 +1667,10 @@ def case_lifecycle(districtId: Optional[int] = Query(default=None)):
 def patrol_plan(
     districtId: int = Query(default=1),
     availableUnits: int = Query(default=8, ge=1, le=50),
+    heinousWeight: float = Query(default=1.5, ge=0, le=5),
+    recencyWeight: float = Query(default=0.75, ge=0, le=5),
+    shiftStart: int = Query(default=0, ge=0, le=23),
+    shiftEnd: int = Query(default=23, ge=0, le=23),
 ):
     cases = filtered_cases(district_id=districtId)
     if cases.empty:
@@ -1669,16 +1681,22 @@ def patrol_plan(
     recent['_latCell'] = recent['latitude'].round(2)
     recent['_lngCell'] = recent['longitude'].round(2)
     recent['_hour'] = pd.to_datetime(recent['IncidentFromDate'], errors='coerce').dt.hour
+    if shiftStart != shiftEnd:
+        if shiftStart < shiftEnd:
+            recent = recent[(recent['_hour'] >= shiftStart) & (recent['_hour'] <= shiftEnd)]
+        else:
+            recent = recent[(recent['_hour'] >= shiftStart) | (recent['_hour'] <= shiftEnd)]
     zones = []
     for (lat, lng), group in recent.groupby(['_latCell', '_lngCell']):
         heinous = int((group['GravityOffenceID'] == 1).sum())
         newest_30 = int((group['_registered'] >= latest - pd.Timedelta(days=29)).sum())
-        score = len(group) + heinous * 1.5 + newest_30 * 0.75
+        score = len(group) + heinous * heinousWeight + newest_30 * recencyWeight
         peak_hour = int(group['_hour'].dropna().mode().iloc[0]) if not group['_hour'].dropna().empty else None
         zones.append({
             "lat": float(group['latitude'].mean()), "lng": float(group['longitude'].mean()),
             "cases": int(len(group)), "heinousCases": heinous, "recent30Days": newest_30,
             "riskScore": round(float(score), 2),
+            "baselineRiskScore": round(float(len(group) + heinous * 1.5 + newest_30 * 0.75), 2),
             "topCrime": str(group['_SubheadName'].value_counts().index[0]),
             "peakWindow": f"{peak_hour:02d}:00–{(peak_hour + 3) % 24:02d}:00" if peak_hour is not None else "Time unavailable",
         })
@@ -1696,13 +1714,172 @@ def patrol_plan(
         zone['allocatedUnits'] = allocations[index]
         zone['rationale'] = f"{zone['cases']} incidents; {zone['heinousCases']} heinous; {zone['recent30Days']} in the latest 30 days"
     served_score = sum(zone['riskScore'] for zone in zones if zone['allocatedUnits'] > 0)
+    baseline_total = sum(zone['baselineRiskScore'] for zone in zones)
+    baseline_raw = [availableUnits * zone['baselineRiskScore'] / baseline_total for zone in zones]
+    baseline_allocations = [int(math.floor(value)) for value in baseline_raw]
+    for index in sorted(range(len(baseline_raw)), key=lambda i: baseline_raw[i] - baseline_allocations[i], reverse=True)[:availableUnits - sum(baseline_allocations)]:
+        baseline_allocations[index] += 1
+    baseline_served = sum(zone['baselineRiskScore'] for index, zone in enumerate(zones) if baseline_allocations[index] > 0)
+    baseline_coverage = round(baseline_served / baseline_total * 100, 1)
+    scenario_coverage = round(served_score / total_score * 100, 1)
     return {
         "district": get_district_name(districtId), "availableUnits": availableUnits,
         "analysisWindow": {"from": (latest - pd.Timedelta(days=89)).strftime('%Y-%m-%d'), "to": latest.strftime('%Y-%m-%d')},
-        "coverageIndex": round(served_score / total_score * 100, 1), "zones": zones,
-        "method": "90-day grid demand score = incidents + 1.5× heinous incidents + 0.75× incidents in the latest 30 days.",
+        "coverageIndex": scenario_coverage, "baselineCoverageIndex": baseline_coverage,
+        "coverageDelta": round(scenario_coverage - baseline_coverage, 1), "zones": zones,
+        "scenario": {"heinousWeight": heinousWeight, "recencyWeight": recencyWeight, "shiftStart": shiftStart, "shiftEnd": shiftEnd},
+        "method": f"90-day grid demand score = incidents + {heinousWeight}× heinous incidents + {recencyWeight}× incidents in the latest 30 days, filtered to the selected shift.",
         "caveat": "Planning aid only. Coverage index measures weighted historical demand represented by staffed zones; it does not predict or promise crime reduction. Supervisor approval is required.",
     }
+
+
+@app.get("/api/data-quality")
+def data_quality_command_centre(districtId: Optional[int] = Query(default=None)):
+    cases = filtered_cases(district_id=districtId)
+    ids = set(cases['CaseMasterID'].astype(int))
+    arrests = df_arrest[df_arrest['CaseMasterID'].isin(ids)].copy()
+    sheets = df_chargesheet[df_chargesheet['CaseMasterID'].isin(ids)].copy()
+    registered = cases.set_index('CaseMasterID')['_registered']
+    arrest_dates = pd.to_datetime(arrests['ArrestSurrenderDate'], errors='coerce')
+    sheet_dates = pd.to_datetime(sheets['csdate'], errors='coerce')
+    arrest_registered = arrests['CaseMasterID'].map(registered)
+    sheet_registered = sheets['CaseMasterID'].map(registered)
+    narrative_counts = cases['BriefFacts'].str.strip().value_counts()
+    duplicate_narratives = set(narrative_counts[narrative_counts > 1].index) - {""}
+    invalid_coordinates = (
+        cases['latitude'].isna() | cases['longitude'].isna()
+        | ~cases['latitude'].between(11.5, 18.8) | ~cases['longitude'].between(74.0, 78.8)
+    )
+    checks = [
+        {"name": "Missing narrative", "count": int(cases['BriefFacts'].str.strip().eq('').sum()), "severity": "high"},
+        {"name": "Duplicated narrative text", "count": int(cases['BriefFacts'].isin(duplicate_narratives).sum()), "severity": "medium"},
+        {"name": "Invalid or missing coordinates", "count": int(invalid_coordinates.sum()), "severity": "high"},
+        {"name": "Missing incident timestamp", "count": int(pd.to_datetime(cases['IncidentFromDate'], errors='coerce').isna().sum()), "severity": "medium"},
+        {"name": "Arrest before FIR", "count": int((arrest_dates < arrest_registered).sum()), "severity": "critical"},
+        {"name": "Chargesheet before FIR", "count": int((sheet_dates < sheet_registered).sum()), "severity": "critical"},
+        {"name": "Unknown police station", "count": int((~cases['PoliceStationID'].isin(df_unit['UnitID'])).sum()), "severity": "high"},
+    ]
+    total_cells = len(cases) * 6
+    missing_cells = int(cases[['BriefFacts', 'IncidentFromDate', 'latitude', 'longitude', 'PoliceStationID', '_DistrictID']].isna().sum().sum())
+    quality_score = max(0, round(100 - (sum(item['count'] for item in checks) / max(total_cells, 1) * 100), 1))
+    district_rows = []
+    for district_id, group in cases.groupby('_DistrictID'):
+        bad_coords = int((group['latitude'].isna() | group['longitude'].isna() | ~group['latitude'].between(11.5, 18.8) | ~group['longitude'].between(74.0, 78.8)).sum())
+        duplicate_count = int(group['BriefFacts'].isin(duplicate_narratives).sum())
+        issue_count = bad_coords + duplicate_count + int(group['BriefFacts'].str.strip().eq('').sum())
+        district_rows.append({"district": get_district_name(district_id), "records": int(len(group)), "issues": issue_count, "issueRate": round(issue_count / len(group) * 100, 1)})
+    district_rows.sort(key=lambda row: row['issueRate'], reverse=True)
+    return {
+        "scope": get_district_name(districtId) if districtId else "Karnataka", "records": int(len(cases)),
+        "qualityScore": quality_score, "fieldCompleteness": round((total_cells - missing_cells) / max(total_cells, 1) * 100, 1),
+        "checks": checks, "districts": district_rows[:12],
+        "recommendations": [
+            "Replace repeated placeholder narratives with source FIR summaries before model training.",
+            "Reject or quarantine chronology conflicts during ingestion.",
+            "Validate coordinates against Karnataka boundaries and police-station jurisdiction.",
+        ],
+    }
+
+
+class HypothesisBoardRequest(BaseModel):
+    title: str
+    hypothesis: str
+    caseIds: list[int] = []
+    evidence: list[str] = []
+    gaps: list[str] = []
+    status: str = "open"
+
+
+@app.get("/api/hypotheses")
+def get_hypothesis_boards():
+    return {"boards": hypothesis_boards}
+
+
+@app.post("/api/hypotheses")
+def save_hypothesis_board(request: HypothesisBoardRequest):
+    valid_cases = df_case[df_case['CaseMasterID'].isin(request.caseIds)]
+    board = {
+        "id": len(hypothesis_boards) + 1, "title": request.title.strip(),
+        "hypothesis": request.hypothesis.strip(), "caseIds": [int(value) for value in valid_cases['CaseMasterID']],
+        "evidence": request.evidence, "gaps": request.gaps, "status": request.status,
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+        "cases": [{"caseId": int(row['CaseMasterID']), "crimeNo": str(row['CrimeNo']), "crimeType": str(row['_SubheadName']), "district": get_district_name(row['_DistrictID'])} for _, row in valid_cases.iterrows()],
+    }
+    hypothesis_boards.append(board)
+    return board
+
+
+@app.get("/api/forecast/backtest")
+def forecast_backtest(
+    districtId: int = Query(default=1),
+    crimeHeadId: Optional[int] = Query(default=None),
+    holdoutMonths: int = Query(default=6, ge=3, le=12),
+):
+    cases = filtered_cases(district_id=districtId, crime_head_id=crimeHeadId)
+    cases['_month'] = cases['_registered'].dt.to_period('M')
+    monthly = cases.groupby('_month').size().sort_index()
+    full_index = pd.period_range(monthly.index.min(), monthly.index.max(), freq='M')
+    monthly = monthly.reindex(full_index, fill_value=0)
+    if len(monthly) < holdoutMonths + 12:
+        raise HTTPException(status_code=400, detail="Not enough monthly history for this backtest")
+    actual = monthly.iloc[-holdoutMonths:]
+    predictions = []
+    for period in actual.index:
+        history = monthly[monthly.index < period].tail(6)
+        predictions.append(float(history.mean()))
+    actual_values = actual.astype(float).values
+    predicted_values = np.asarray(predictions)
+    mae = float(np.mean(np.abs(actual_values - predicted_values)))
+    mape_mask = actual_values > 0
+    mape = float(np.mean(np.abs((actual_values[mape_mask] - predicted_values[mape_mask]) / actual_values[mape_mask])) * 100) if mape_mask.any() else None
+    baseline = np.repeat(float(monthly.iloc[-holdoutMonths-1]), holdoutMonths)
+    baseline_mae = float(np.mean(np.abs(actual_values - baseline)))
+    return {
+        "district": get_district_name(districtId), "crimeCategory": "All categories" if crimeHeadId is None else str(df_crime_head.loc[df_crime_head['CrimeHeadID'] == crimeHeadId, 'CrimeGroupName'].iloc[0]),
+        "model": "Six-month rolling mean", "holdoutMonths": holdoutMonths,
+        "metrics": {"mae": round(mae, 1), "mape": round(mape, 1) if mape is not None else None, "naiveMAE": round(baseline_mae, 1), "improvementVsNaive": round((baseline_mae - mae) / baseline_mae * 100, 1) if baseline_mae else 0},
+        "series": [{"month": str(period), "actual": int(actual.loc[period]), "predicted": round(predictions[index], 1)} for index, period in enumerate(actual.index)],
+        "caveat": "This is retrospective validation on known historical months, not a guarantee of future crime volume.",
+    }
+
+
+def case_brief_pdf(case_id: int):
+    reconstruction = build_incident_reconstruction(case_id)
+    links = get_case_links(case_id)
+    case = reconstruction['case']
+    buffer = BytesIO()
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name='DrishtiTitle', parent=styles['Title'], fontName='Helvetica-Bold', fontSize=20, leading=24, textColor=colors.HexColor('#173B63'), alignment=TA_CENTER, spaceAfter=12))
+    styles.add(ParagraphStyle(name='Section', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=12, leading=15, textColor=colors.HexColor('#173B63'), spaceBefore=10, spaceAfter=6))
+    styles.add(ParagraphStyle(name='Small', parent=styles['BodyText'], fontSize=8.5, leading=11, textColor=colors.HexColor('#34495E')))
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=16*mm, leftMargin=16*mm, topMargin=15*mm, bottomMargin=15*mm, title=f"Drishti Case Brief {case['crimeNo']}")
+    story = [Paragraph("DRISHTI EVIDENCE-BASED CASE BRIEF", styles['DrishtiTitle']), Paragraph(f"FIR {case['crimeNo']} | {case['crimeType']} | {case['district']}", styles['Heading3'])]
+    summary_data = [["Incident", case.get('incidentTime') or '-'], ["Vehicle", case.get('vehicle') or 'Not recorded'], ["Phone", case.get('phone') or 'Not recorded'], ["Accused", ', '.join(case.get('accused') or []) or 'Not linked']]
+    summary = Table(summary_data, colWidths=[38*mm, 120*mm])
+    summary.setStyle(TableStyle([('BACKGROUND',(0,0),(0,-1),colors.HexColor('#EAF2F8')),('TEXTCOLOR',(0,0),(-1,-1),colors.HexColor('#1C2833')),('GRID',(0,0),(-1,-1),0.3,colors.HexColor('#AAB7B8')),('FONTNAME',(0,0),(0,-1),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,-1),8.5),('VALIGN',(0,0),(-1,-1),'TOP'),('PADDING',(0,0),(-1,-1),6)]))
+    story += [Spacer(1, 6), summary, Paragraph("Recorded narrative", styles['Section']), Paragraph(str(case.get('briefFacts') or 'No narrative recorded.'), styles['Small']), Paragraph("Incident timeline", styles['Section'])]
+    timeline_rows = [["Time", "Event", "Evidence status"]] + [[Paragraph(str(event.get('timestamp','-')).replace('T', ' '), styles['Small']), Paragraph(str(event.get('label','-')), styles['Small']), Paragraph(str(event.get('confidence','-')), styles['Small'])] for event in reconstruction['events']]
+    timeline = Table(timeline_rows, colWidths=[40*mm, 90*mm, 28*mm], repeatRows=1)
+    timeline.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#173B63')),('TEXTCOLOR',(0,0),(-1,0),colors.white),('GRID',(0,0),(-1,-1),0.3,colors.HexColor('#AAB7B8')),('FONTSIZE',(0,0),(-1,-1),7.5),('VALIGN',(0,0),(-1,-1),'TOP'),('PADDING',(0,0),(-1,-1),5)]))
+    story += [timeline, Paragraph("Related FIR signals", styles['Section'])]
+    link_rows = [["FIR", "Score", "Supporting signals"]]
+    for related in links['relatedCases'][:8]:
+        link_rows.append([Paragraph(str(related['crimeNo']), styles['Small']), str(related['connectionScore']), Paragraph(", ".join(item['type'] for item in related['evidence']) or "Narrative similarity", styles['Small'])])
+    link_table = Table(link_rows, colWidths=[55*mm, 18*mm, 85*mm], repeatRows=1)
+    link_table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#173B63')),('TEXTCOLOR',(0,0),(-1,0),colors.white),('GRID',(0,0),(-1,-1),0.3,colors.HexColor('#AAB7B8')),('FONTSIZE',(0,0),(-1,-1),7.5),('VALIGN',(0,0),(-1,-1),'TOP'),('PADDING',(0,0),(-1,-1),5)]))
+    story += [link_table, Paragraph("Missing links and limitations", styles['Section'])]
+    for missing in reconstruction['missingLinks']:
+        story.append(Paragraph(f"- {missing['field']}: {missing['impact']} Next step: {missing['nextStep']}", styles['Small']))
+    story += [Spacer(1, 10), Paragraph("Decision-support only. Inferences are labelled and require officer verification. This document does not establish guilt or authorize operational action.", styles['Small'])]
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+
+@app.get("/api/cases/{case_id}/brief.pdf")
+def download_case_brief(case_id: int):
+    buffer = case_brief_pdf(case_id)
+    return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="drishti-case-{case_id}.pdf"'})
 
 # Serve Frontend static assets
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")

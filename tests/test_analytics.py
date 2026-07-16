@@ -137,9 +137,65 @@ def test_case_lifecycle_reconciles_funnel_and_exceptions():
 
 
 def test_patrol_plan_allocates_exact_available_units_and_labels_limitations():
-    payload = analytics.patrol_plan(districtId=1, availableUnits=8)
+    payload = analytics.patrol_plan(
+        districtId=1, availableUnits=8, heinousWeight=1.5,
+        recencyWeight=0.75, shiftStart=0, shiftEnd=23,
+    )
 
     assert sum(zone["allocatedUnits"] for zone in payload["zones"]) == 8
     assert 0 < payload["coverageIndex"] <= 100
     assert all(zone["rationale"] for zone in payload["zones"])
     assert "does not predict" in payload["caveat"]
+
+
+def test_data_quality_centre_reports_schema_issues():
+    payload = analytics.data_quality_command_centre(districtId=1)
+
+    assert payload["records"] > 0
+    assert 0 <= payload["qualityScore"] <= 100
+    assert any(check["name"] == "Duplicated narrative text" for check in payload["checks"])
+    assert payload["recommendations"]
+
+
+def test_hypothesis_board_validates_case_links():
+    analytics.hypothesis_boards.clear()
+    request = analytics.HypothesisBoardRequest(
+        title="Chain-snatching working theory",
+        hypothesis="The same vehicle may connect the selected FIRs.",
+        caseIds=[50005, -1],
+        evidence=["Shared vehicle identifier"],
+        gaps=["Exact CCTV route"],
+    )
+    board = analytics.save_hypothesis_board(request)
+
+    assert board["id"] == 1
+    assert board["caseIds"] == [50005]
+    assert board["evidence"] and board["gaps"]
+
+
+def test_patrol_what_if_respects_shift_and_weights():
+    payload = analytics.patrol_plan(
+        districtId=1, availableUnits=5, heinousWeight=2.0,
+        recencyWeight=1.0, shiftStart=18, shiftEnd=23,
+    )
+
+    assert sum(zone["allocatedUnits"] for zone in payload["zones"]) == 5
+    assert payload["scenario"]["shiftStart"] == 18
+    assert payload["scenario"]["heinousWeight"] == 2.0
+    assert "baselineCoverageIndex" in payload
+    assert payload["coverageDelta"] == round(payload["coverageIndex"] - payload["baselineCoverageIndex"], 1)
+
+
+def test_forecast_backtest_uses_historical_holdout():
+    payload = analytics.forecast_backtest(districtId=1, crimeHeadId=None, holdoutMonths=6)
+
+    assert len(payload["series"]) == 6
+    assert payload["metrics"]["mae"] >= 0
+    assert "retrospective" in payload["caveat"].lower()
+
+
+def test_case_brief_pdf_is_generated():
+    pdf = analytics.case_brief_pdf(50005).read()
+
+    assert pdf.startswith(b"%PDF")
+    assert len(pdf) > 2000

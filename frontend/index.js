@@ -17,6 +17,7 @@ let reconstructionData = null;
 let reconstructionInterval = null;
 let patrolMap = null;
 let patrolLayer = null;
+let forecastChart = null;
 
 // DOM Ready
 document.addEventListener("DOMContentLoaded", () => {
@@ -26,6 +27,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initDistrictDrilldown();
   initReconstruction();
   initAnalyticsLabs();
+  initResponsiveShell();
   
   // Catalyst can cold-start before the analytics data is ready. Wait for
   // readiness so the first page load populates without a manual refresh.
@@ -61,9 +63,9 @@ function populateLabDistricts(geojson, apiDistricts = []) {
   const districts = apiDistricts.length ? apiDistricts : geojson.features.map(feature => ({ id: feature.properties.districtId, name: feature.properties.districtName }))
     .filter(item => item.id && item.name).filter((item, index, all) => all.findIndex(other => other.id === item.id) === index)
     .sort((a, b) => a.name.localeCompare(b.name));
-  ["pattern-district", "lifecycle-district", "patrol-district"].forEach(id => {
+  ["pattern-district", "lifecycle-district", "patrol-district", "quality-district", "forecast-district"].forEach(id => {
     const select = document.getElementById(id);
-    select.innerHTML = id === "patrol-district" ? '' : '<option value="">All Karnataka</option>';
+    select.innerHTML = ["patrol-district", "forecast-district"].includes(id) ? '' : '<option value="">All Karnataka</option>';
     districts.forEach(district => select.insertAdjacentHTML('beforeend', `<option value="${district.id}">${escapeLab(district.name)}</option>`));
   });
   document.getElementById("patrol-district").value = districts.some(d => d.id === 1) ? "1" : String(districts[0]?.id || "");
@@ -73,6 +75,10 @@ function initAnalyticsLabs() {
   document.getElementById("pattern-run").addEventListener("click", runPatternDiscovery);
   document.getElementById("lifecycle-run").addEventListener("click", runLifecycleAnalysis);
   document.getElementById("patrol-run").addEventListener("click", runPatrolPlan);
+  document.getElementById("quality-run").addEventListener("click", runQualityAudit);
+  document.getElementById("forecast-run").addEventListener("click", runForecastBacktest);
+  document.getElementById("hypothesis-form").addEventListener("submit", saveHypothesisBoard);
+  loadHypothesisBoards();
 }
 
 async function fetchLab(path, button) {
@@ -80,7 +86,7 @@ async function fetchLab(path, button) {
   button.disabled = true; button.textContent = "Analysing…";
   try {
     const response = await fetch(`${API_BASE}${path}`); const body = await response.json();
-    if (!response.ok) throw new Error(body.detail || "Analysis failed");
+    if (!response.ok) throw new Error(typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail || "Analysis failed"));
     return body;
   } finally { button.disabled = false; button.textContent = original; }
 }
@@ -110,14 +116,68 @@ async function runLifecycleAnalysis() {
 }
 
 async function runPatrolPlan() {
-  const button = document.getElementById("patrol-run"); const district = document.getElementById("patrol-district").value; const units = document.getElementById("patrol-units").value;
+  const button = document.getElementById("patrol-run"); const district = document.getElementById("patrol-district").value || "1"; const units = document.getElementById("patrol-units").value;
+  const heinous = document.getElementById("patrol-heinous").value; const recency = document.getElementById("patrol-recency").value; const [shiftStart, shiftEnd] = document.getElementById("patrol-shift").value.split('-');
   try {
-    const data = await fetchLab(`/patrol/plan?districtId=${district}&availableUnits=${units}`, button); renderPatrolMap(data.zones);
+    const data = await fetchLab(`/patrol/plan?districtId=${district}&availableUnits=${units}&heinousWeight=${heinous}&recencyWeight=${recency}&shiftStart=${shiftStart}&shiftEnd=${shiftEnd}`, button);
     document.getElementById("patrol-window").textContent = `${data.analysisWindow.from} to ${data.analysisWindow.to}`;
-    document.getElementById("patrol-summary").innerHTML = `<div class="metric-card"><div class="value">${data.availableUnits}</div><div class="label">Units allocated</div></div><div class="metric-card"><div class="value">${data.coverageIndex}%</div><div class="label">Weighted demand coverage</div></div><div class="metric-card"><div class="value">${data.zones.filter(z => z.allocatedUnits > 0).length}</div><div class="label">Staffed priority zones</div></div>`;
+    document.getElementById("patrol-summary").innerHTML = `<div class="metric-card"><div class="value">${data.availableUnits}</div><div class="label">Units allocated</div></div><div class="metric-card"><div class="value">${data.coverageIndex}%</div><div class="label">Scenario demand coverage</div></div><div class="metric-card"><div class="value">${data.baselineCoverageIndex}%</div><div class="label">Default-weight baseline</div></div><div class="metric-card ${data.coverageDelta < 0 ? 'alert':''}"><div class="value">${data.coverageDelta > 0 ? '+':''}${data.coverageDelta} pts</div><div class="label">Coverage change</div></div><div class="metric-card"><div class="value">${data.zones.filter(z => z.allocatedUnits > 0).length}</div><div class="label">Staffed priority zones</div></div>`;
     document.getElementById("patrol-note").className = "analysis-note warning"; document.getElementById("patrol-note").innerHTML = `${escapeLab(data.method)}<br><strong>${escapeLab(data.caveat)}</strong>`;
     document.getElementById("patrol-zones").innerHTML = data.zones.map(zone => `<article class="cluster-card ${zone.allocatedUnits ? '' : 'zone-card-zero'}"><div class="cluster-head"><h3>${zone.zone} · ${escapeLab(zone.topCrime)}</h3><span class="cluster-score">${zone.allocatedUnits} unit${zone.allocatedUnits === 1 ? '' : 's'}</span></div><div class="funnel-label">Peak ${escapeLab(zone.peakWindow)} · score ${zone.riskScore}</div><p style="margin-top:8px;color:var(--text-secondary);font-size:11px">${escapeLab(zone.rationale)}</p></article>`).join('');
+    window.setTimeout(() => {
+      try { renderPatrolMap(data.zones); } catch (mapError) { console.warn('Patrol map could not render', mapError); }
+    }, 50);
   } catch (error) { document.getElementById("patrol-note").textContent = error.message; }
+}
+
+async function runQualityAudit() {
+  const button = document.getElementById("quality-run"); const district = document.getElementById("quality-district").value;
+  try {
+    const data = await fetchLab(`/data-quality${district ? `?districtId=${district}` : ''}`, button);
+    document.getElementById("quality-summary").innerHTML = `<div class="metric-card"><div class="value">${data.qualityScore}</div><div class="label">Quality score / 100</div></div><div class="metric-card"><div class="value">${data.fieldCompleteness}%</div><div class="label">Core field completeness</div></div><div class="metric-card"><div class="value">${data.records.toLocaleString()}</div><div class="label">Records audited</div></div>`;
+    document.getElementById("quality-checks").innerHTML = data.checks.map(check => `<article class="cluster-card quality-${check.severity}"><div class="cluster-head"><h3>${escapeLab(check.name)}</h3><span class="cluster-score">${check.count.toLocaleString()}</span></div><div class="funnel-label">${escapeLab(check.severity)} priority · ${data.records ? (check.count/data.records*100).toFixed(1) : 0}% of case scope</div></article>`).join('');
+    document.getElementById("quality-table").innerHTML = data.districts.map(row => `<tr><td>${escapeLab(row.district)}</td><td>${row.records.toLocaleString()}</td><td>${row.issues.toLocaleString()}</td><td>${row.issueRate}%</td></tr>`).join('');
+    document.getElementById("quality-recommendations").innerHTML = data.recommendations.map(item => `<li>${escapeLab(item)}</li>`).join('');
+  } catch (error) { document.getElementById("quality-summary").innerHTML = `<div class="analysis-note warning">${escapeLab(error.message)}</div>`; }
+}
+
+async function saveHypothesisBoard(event) {
+  event.preventDefault(); const status = document.getElementById("hypothesis-status");
+  const lines = id => document.getElementById(id).value.split('\n').map(value => value.trim()).filter(Boolean);
+  const caseIds = document.getElementById("hypothesis-cases").value.split(',').map(value => parseInt(value.trim())).filter(Number.isFinite);
+  const payload = { title:document.getElementById("hypothesis-title").value, hypothesis:document.getElementById("hypothesis-text").value, caseIds, evidence:lines("hypothesis-evidence"), gaps:lines("hypothesis-gaps"), status:"open" };
+  try {
+    const response = await fetch(`${API_BASE}/hypotheses`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+    if (!response.ok) throw new Error('Unable to save board');
+    event.target.reset(); status.textContent = 'Board saved with timestamp and linked FIR validation.'; await loadHypothesisBoards();
+  } catch (error) { status.textContent = error.message; }
+}
+
+async function loadHypothesisBoards() {
+  try {
+    const response = await fetch(`${API_BASE}/hypotheses`); if (!response.ok) return; const data = await response.json();
+    document.getElementById("hypothesis-boards").innerHTML = data.boards.length ? data.boards.slice().reverse().map(board => `<article class="cluster-card"><div class="cluster-head"><h3>${escapeLab(board.title)}</h3><span class="status-pill blue-pill">${escapeLab(board.status)}</span></div><p class="board-hypothesis">${escapeLab(board.hypothesis)}</p><div class="term-row">${board.cases.map(item => `<span class="term-pill">FIR ${escapeLab(item.crimeNo)}</span>`).join('')}</div><div class="board-columns"><div><strong>Evidence</strong>${board.evidence.map(item => `<p>+ ${escapeLab(item)}</p>`).join('') || '<p>None recorded</p>'}</div><div><strong>Gaps</strong>${board.gaps.map(item => `<p>– ${escapeLab(item)}</p>`).join('') || '<p>None recorded</p>'}</div></div></article>`).join('') : '<div class="analysis-note">No boards saved yet. Create a testable hypothesis on the left.</div>';
+  } catch (error) { console.error('Unable to load hypothesis boards', error); }
+}
+
+async function runForecastBacktest() {
+  const button = document.getElementById("forecast-run"); const district=document.getElementById("forecast-district").value || "1"; const category=document.getElementById("forecast-category").value; const months=document.getElementById("forecast-months").value;
+  try {
+    const data=await fetchLab(`/forecast/backtest?districtId=${district}&holdoutMonths=${months}${category ? `&crimeHeadId=${category}`:''}`,button); const metrics=data.metrics;
+    document.getElementById("forecast-metrics").innerHTML=`<div class="metric-card"><div class="value">${metrics.mae}</div><div class="label">Mean absolute error</div></div><div class="metric-card"><div class="value">${metrics.mape ?? '—'}%</div><div class="label">Mean percentage error</div></div><div class="metric-card"><div class="value">${metrics.naiveMAE}</div><div class="label">Naive baseline MAE</div></div><div class="metric-card ${metrics.improvementVsNaive < 0 ? 'alert':''}"><div class="value">${metrics.improvementVsNaive}%</div><div class="label">Improvement vs naive</div></div>`;
+    document.getElementById("forecast-method").textContent=`${data.district} · ${data.crimeCategory} · ${data.model}`; document.getElementById("forecast-note").textContent=data.caveat; renderForecastChart(data.series);
+  } catch(error){document.getElementById("forecast-note").textContent=error.message;}
+}
+
+function renderForecastChart(series) {
+  const context=document.getElementById("forecast-chart").getContext('2d'); if(forecastChart) forecastChart.destroy();
+  forecastChart=new Chart(context,{type:'line',data:{labels:series.map(item=>item.month),datasets:[{label:'Actual',data:series.map(item=>item.actual),borderColor:'#58A6FF',backgroundColor:'rgba(88,166,255,.12)',tension:.25},{label:'Predicted',data:series.map(item=>item.predicted),borderColor:'#D29922',borderDash:[6,4],tension:.25}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#C9D1D9'}}},scales:{x:{ticks:{color:'#8B949E'},grid:{color:'#21262D'}},y:{beginAtZero:true,ticks:{color:'#8B949E'},grid:{color:'#21262D'}}}}});
+}
+
+function initResponsiveShell() {
+  const button=document.getElementById('mobile-menu-btn'); const sidebar=document.querySelector('.sidebar');
+  button.addEventListener('click',()=>sidebar.classList.toggle('mobile-open'));
+  document.querySelectorAll('.nav-link').forEach(link=>link.addEventListener('click',()=>sidebar.classList.remove('mobile-open')));
 }
 
 function renderPatrolMap(zones) {
@@ -852,6 +912,10 @@ async function loadIncidentReconstruction(caseId) {
     const response = await fetch(`${API_BASE}/cases/${encodeURIComponent(caseId)}/reconstruction`);
     if (!response.ok) throw new Error(`Reconstruction request failed: ${response.status}`);
     reconstructionData = await response.json();
+    const pdfButton = document.getElementById("btn-case-pdf");
+    pdfButton.href = `${API_BASE}/cases/${encodeURIComponent(caseId)}/brief.pdf`;
+    pdfButton.classList.remove("disabled-link");
+    pdfButton.removeAttribute("aria-disabled");
     triggerNav("reconstruction");
     renderReconstructionSummary();
     initializeReconstructionMap();
