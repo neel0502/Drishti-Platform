@@ -8,12 +8,14 @@ import numpy as np
 import networkx as nx
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.cluster import MiniBatchKMeans
 import re
 import os
 import json
 import math
 from datetime import datetime, timedelta, timezone
 from threading import Event, Thread
+from typing import Optional
 
 # Create FastAPI app
 app = FastAPI(title="Drishti Intelligence API")
@@ -662,7 +664,11 @@ def get_map_data(
     return {
         "geojson": geojson_data,
         "incidents": incidents,
-        "hourlyDistribution": hourly_distribution
+        "hourlyDistribution": hourly_distribution,
+        "districts": [
+            {"id": int(row['DistrictID']), "name": str(row['DistrictName'])}
+            for _, row in df_district.sort_values('DistrictName').iterrows()
+        ],
     }
 
 @app.get("/api/search")
@@ -1511,6 +1517,191 @@ def get_district_details(district_id: int):
         "topCrimeType": top_crime,
         "stations": station_rows,
         "topOffenders": top_offenders
+    }
+
+
+def filtered_cases(district_id=None, crime_head_id=None, date_from=None, date_to=None):
+    """Return a defensive, date-normalized slice used by interactive laboratories."""
+    working = df_case.copy()
+    working['_registered'] = pd.to_datetime(working['CrimeRegisteredDate'], errors='coerce')
+    if district_id is not None:
+        working = working[working['_DistrictID'] == district_id]
+    if crime_head_id is not None:
+        working = working[working['CrimeMajorHeadID'] == crime_head_id]
+    if date_from:
+        working = working[working['_registered'] >= pd.Timestamp(date_from)]
+    if date_to:
+        working = working[working['_registered'] <= pd.Timestamp(date_to)]
+    return working.dropna(subset=['_registered'])
+
+
+@app.get("/api/patterns/discover")
+def discover_patterns(
+    districtId: Optional[int] = Query(default=None),
+    crimeHeadId: Optional[int] = Query(default=None),
+    dateFrom: Optional[str] = Query(default=None),
+    dateTo: Optional[str] = Query(default=None),
+    clusterCount: int = Query(default=4, ge=2, le=8),
+):
+    """Discover narrative clusters at request time; no prepared pattern labels are used."""
+    try:
+        working = filtered_cases(districtId, crimeHeadId, dateFrom, dateTo)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Dates must use YYYY-MM-DD")
+    working = working[working['BriefFacts'].str.strip().str.len() >= 20]
+    if len(working) < clusterCount * 3:
+        raise HTTPException(status_code=400, detail="Select a broader slice with at least three cases per pattern")
+
+    # Recent samples keep the interaction responsive while retaining an auditable case list.
+    sample = working.sort_values('_registered', ascending=False).head(5000).copy()
+    matrix = vectorizer.transform(sample['BriefFacts'])
+    model = MiniBatchKMeans(n_clusters=clusterCount, random_state=42, batch_size=512, n_init=5)
+    labels = model.fit_predict(matrix)
+    terms = np.asarray(vectorizer.get_feature_names_out())
+    clusters = []
+    for cluster_id in range(clusterCount):
+        positions = np.where(labels == cluster_id)[0]
+        members = sample.iloc[positions]
+        center = model.cluster_centers_[cluster_id]
+        top_terms = [str(term) for term in terms[center.argsort()[-8:][::-1]]]
+        similarities = cosine_similarity(matrix[positions], center.reshape(1, -1)).ravel()
+        representative_positions = positions[np.argsort(similarities)[-3:][::-1]]
+        representatives = []
+        for pos in representative_positions:
+            row = sample.iloc[pos]
+            representatives.append({
+                "caseId": int(row['CaseMasterID']), "crimeNo": str(row['CrimeNo']),
+                "date": row['_registered'].strftime('%Y-%m-%d'),
+                "district": get_district_name(row['_DistrictID']),
+                "crimeType": str(row['_SubheadName']), "facts": str(row['BriefFacts']),
+                "lat": float(row['latitude']), "lng": float(row['longitude']),
+            })
+        clusters.append({
+            "id": cluster_id + 1, "size": int(len(members)),
+            "share": round(len(members) / len(sample) * 100, 1),
+            "topTerms": top_terms,
+            "cohesion": round(float(similarities.mean()) * 100, 1),
+            "topCrimeTypes": [str(v) for v in members['_SubheadName'].value_counts().head(3).index],
+            "topDistricts": [get_district_name(v) for v in members['_DistrictID'].value_counts().head(3).index],
+            "dateSpan": {"from": members['_registered'].min().strftime('%Y-%m-%d'), "to": members['_registered'].max().strftime('%Y-%m-%d')},
+            "uniqueNarrativeRate": round(members['BriefFacts'].nunique() / len(members) * 100, 1),
+            "qualityFlag": "Templated narrative — treat as a data-quality cluster" if members['BriefFacts'].nunique() / len(members) < 0.05 else None,
+            "representativeCases": representatives,
+        })
+    clusters.sort(key=lambda item: item['size'], reverse=True)
+    return {
+        "caseCount": int(len(working)), "sampledCaseCount": int(len(sample)), "clusters": clusters,
+        "method": "TF-IDF narrative vectors grouped with MiniBatch K-Means; cohesion is mean case-to-centroid cosine similarity.",
+        "caveat": "Clusters are investigative leads, not proof of common offenders or causation. Review the linked FIRs.",
+    }
+
+
+@app.get("/api/lifecycle")
+def case_lifecycle(districtId: Optional[int] = Query(default=None)):
+    cases = filtered_cases(district_id=districtId)
+    if cases.empty:
+        raise HTTPException(status_code=404, detail="No cases found")
+    ids = set(cases['CaseMasterID'].astype(int))
+    arrests = df_arrest[df_arrest['CaseMasterID'].isin(ids)].copy()
+    sheets = df_chargesheet[df_chargesheet['CaseMasterID'].isin(ids)].copy()
+    arrests['_date'] = pd.to_datetime(arrests['ArrestSurrenderDate'], errors='coerce')
+    sheets['_date'] = pd.to_datetime(sheets['csdate'], errors='coerce')
+    first_arrest = arrests.groupby('CaseMasterID')['_date'].min()
+    first_sheet = sheets.groupby('CaseMasterID')['_date'].min()
+    base = cases.set_index('CaseMasterID')[['_registered', 'PoliceStationID', 'CaseStatusID', 'CrimeNo']].copy()
+    base['arrest'] = first_arrest
+    base['sheet'] = first_sheet
+    base['arrestDays'] = (base['arrest'] - base['_registered']).dt.days
+    base['sheetDays'] = (base['sheet'] - base['_registered']).dt.days
+    analysis_date = cases['_registered'].max()
+    base['ageDays'] = (analysis_date - base['_registered']).dt.days
+    chronology = base[(base['arrestDays'] < 0) | (base['sheetDays'] < 0)]
+    pending_90 = base[(~base['CaseStatusID'].isin([2, 3])) & (base['ageDays'] > 90)]
+
+    station_rows = []
+    for station_id, group in base.groupby('PoliceStationID'):
+        pending = int((~group['CaseStatusID'].isin([2, 3])).sum())
+        station_rows.append({
+            "station": get_unit_name(station_id), "cases": int(len(group)), "pending": pending,
+            "pendingRate": round(pending / len(group) * 100, 1),
+            "medianChargeDays": clean_val(group['sheetDays'].dropna().median()),
+        })
+    station_rows.sort(key=lambda row: (row['pendingRate'], row['pending']), reverse=True)
+    arrested_ids, sheet_ids = set(first_arrest.index), set(first_sheet.index)
+    valid_arrest_days = base.loc[base['arrestDays'] >= 0, 'arrestDays']
+    valid_sheet_days = base.loc[base['sheetDays'] >= 0, 'sheetDays']
+    return {
+        "district": get_district_name(districtId) if districtId else "Karnataka",
+        "analysisDate": analysis_date.strftime('%Y-%m-%d'),
+        "funnel": [
+            {"stage": "FIR registered", "count": int(len(base))},
+            {"stage": "Arrest recorded", "count": int(len(arrested_ids))},
+            {"stage": "Chargesheet filed", "count": int(len(sheet_ids))},
+            {"stage": "Resolved/closed", "count": int(base['CaseStatusID'].isin([2, 3]).sum())},
+        ],
+        "timings": {
+            "medianFIRToArrestDays": clean_val(valid_arrest_days.median()),
+            "averageFIRToArrestDays": round(float(valid_arrest_days.mean()), 1) if len(valid_arrest_days) else None,
+            "medianFIRToChargesheetDays": clean_val(valid_sheet_days.median()),
+        },
+        "exceptions": {
+            "arrestWithoutChargesheet": int(len(arrested_ids - sheet_ids)),
+            "chargesheetWithoutArrest": int(len(sheet_ids - arrested_ids)),
+            "pendingOver90Days": int(len(pending_90)),
+            "chronologyConflicts": int(len(chronology)),
+        },
+        "bottlenecks": station_rows[:10],
+        "method": "CaseMaster is linked to the earliest recorded arrest and chargesheet by CaseMasterID.",
+    }
+
+
+@app.get("/api/patrol/plan")
+def patrol_plan(
+    districtId: int = Query(default=1),
+    availableUnits: int = Query(default=8, ge=1, le=50),
+):
+    cases = filtered_cases(district_id=districtId)
+    if cases.empty:
+        raise HTTPException(status_code=404, detail="No cases found")
+    latest = cases['_registered'].max()
+    recent = cases[cases['_registered'] >= latest - pd.Timedelta(days=89)].copy()
+    recent = recent.dropna(subset=['latitude', 'longitude'])
+    recent['_latCell'] = recent['latitude'].round(2)
+    recent['_lngCell'] = recent['longitude'].round(2)
+    recent['_hour'] = pd.to_datetime(recent['IncidentFromDate'], errors='coerce').dt.hour
+    zones = []
+    for (lat, lng), group in recent.groupby(['_latCell', '_lngCell']):
+        heinous = int((group['GravityOffenceID'] == 1).sum())
+        newest_30 = int((group['_registered'] >= latest - pd.Timedelta(days=29)).sum())
+        score = len(group) + heinous * 1.5 + newest_30 * 0.75
+        peak_hour = int(group['_hour'].dropna().mode().iloc[0]) if not group['_hour'].dropna().empty else None
+        zones.append({
+            "lat": float(group['latitude'].mean()), "lng": float(group['longitude'].mean()),
+            "cases": int(len(group)), "heinousCases": heinous, "recent30Days": newest_30,
+            "riskScore": round(float(score), 2),
+            "topCrime": str(group['_SubheadName'].value_counts().index[0]),
+            "peakWindow": f"{peak_hour:02d}:00–{(peak_hour + 3) % 24:02d}:00" if peak_hour is not None else "Time unavailable",
+        })
+    zones.sort(key=lambda zone: zone['riskScore'], reverse=True)
+    zones = zones[:12]
+    if not zones:
+        raise HTTPException(status_code=404, detail="No geocoded recent cases found")
+    total_score = sum(zone['riskScore'] for zone in zones)
+    raw = [availableUnits * zone['riskScore'] / total_score for zone in zones]
+    allocations = [int(math.floor(value)) for value in raw]
+    for index in sorted(range(len(raw)), key=lambda i: raw[i] - allocations[i], reverse=True)[:availableUnits - sum(allocations)]:
+        allocations[index] += 1
+    for index, zone in enumerate(zones):
+        zone['zone'] = f"Z{index + 1}"
+        zone['allocatedUnits'] = allocations[index]
+        zone['rationale'] = f"{zone['cases']} incidents; {zone['heinousCases']} heinous; {zone['recent30Days']} in the latest 30 days"
+    served_score = sum(zone['riskScore'] for zone in zones if zone['allocatedUnits'] > 0)
+    return {
+        "district": get_district_name(districtId), "availableUnits": availableUnits,
+        "analysisWindow": {"from": (latest - pd.Timedelta(days=89)).strftime('%Y-%m-%d'), "to": latest.strftime('%Y-%m-%d')},
+        "coverageIndex": round(served_score / total_score * 100, 1), "zones": zones,
+        "method": "90-day grid demand score = incidents + 1.5× heinous incidents + 0.75× incidents in the latest 30 days.",
+        "caveat": "Planning aid only. Coverage index measures weighted historical demand represented by staffed zones; it does not predict or promise crime reduction. Supervisor approval is required.",
     }
 
 # Serve Frontend static assets

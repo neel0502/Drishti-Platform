@@ -70,6 +70,18 @@
           <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v-2H7v-2h7V9H7V7h7V5h5v12h-5z"/></svg>
           District Drill-Down
         </a>
+        <a href="#" class="nav-link" data-target="patterns">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M4 4h5v5H4V4zm11 0h5v5h-5V4zM4 15h5v5H4v-5zm11 0h5v5h-5v-5zM9 6h6v2H9V6zm-2 3h2v6H7V9zm8 0h2v6h-2V9zM9 17h6v2H9v-2z"/></svg>
+          Pattern Lab
+        </a>
+        <a href="#" class="nav-link" data-target="lifecycle">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2a10 10 0 1 0 10 10h-2a8 8 0 1 1-2.34-5.66L14 10h8V2l-2.93 2.93A9.94 9.94 0 0 0 12 2zm-1 5v6l5 3 1-1.73-4-2.27V7h-2z"/></svg>
+          Case Lifecycle
+        </a>
+        <a href="#" class="nav-link" data-target="patrol">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M20.5 3 15 5.1 9 3 3.5 4.9A.75.75 0 0 0 3 5.6V21l6-2.1 6 2.1 6-2.1V3.7a.75.75 0 0 0-.5-.7zM10 5.4l4 1.4v11.8l-4-1.4V5.4z"/></svg>
+          Patrol Planner
+        </a>
       </nav>
       
       <div class="sidebar-bottom">
@@ -582,6 +594,39 @@
               </div>
             </div>
           </div>
+        </section>
+
+        <section class="content-panel" id="patterns-panel">
+          <div class="lab-hero">
+            <div><span class="eyebrow">DISCOVERY WORKBENCH</span><h2>Pattern-discovery laboratory</h2><p>Group FIR narratives dynamically and inspect the records behind every cluster.</p></div>
+            <div class="method-chip">Unsupervised · Evidence-linked</div>
+          </div>
+          <div class="panel-card lab-controls">
+            <select id="pattern-district" class="filter-select"><option value="">All Karnataka</option></select>
+            <select id="pattern-category" class="filter-select"><option value="">All crime categories</option><option value="1">Crimes Against Body</option><option value="2">Crimes Against Property</option><option value="3">Crimes Against Women</option><option value="4">Economic Offences</option><option value="6">Cyber Crimes</option><option value="7">Drug Offences</option></select>
+            <input id="pattern-from" class="lab-input" type="date" aria-label="From date">
+            <input id="pattern-to" class="lab-input" type="date" aria-label="To date">
+            <select id="pattern-count" class="filter-select"><option value="3">3 patterns</option><option value="4" selected>4 patterns</option><option value="5">5 patterns</option><option value="6">6 patterns</option></select>
+            <button id="pattern-run" class="btn btn-primary">Discover patterns</button>
+          </div>
+          <div id="pattern-summary" class="analysis-note">Choose a slice, then run discovery. Results are generated from the selected FIR narratives.</div>
+          <div id="pattern-results" class="lab-grid"></div>
+        </section>
+
+        <section class="content-panel" id="lifecycle-panel">
+          <div class="lab-hero"><div><span class="eyebrow">PROCESS INTELLIGENCE</span><h2>Case lifecycle intelligence</h2><p>Trace records from FIR to arrest, chargesheet, and resolution—then expose delay and data-quality exceptions.</p></div></div>
+          <div class="panel-card lab-controls"><select id="lifecycle-district" class="filter-select"><option value="">All Karnataka</option></select><button id="lifecycle-run" class="btn btn-primary">Analyse lifecycle</button></div>
+          <div id="lifecycle-funnel" class="funnel-grid"></div>
+          <div id="lifecycle-metrics" class="metric-grid"></div>
+          <div class="panel-card"><div class="card-header"><h3>Station bottlenecks</h3><span class="header-muted-label">Ranked by unresolved share</span></div><div class="cases-table-wrapper"><table class="data-table"><thead><tr><th>Station</th><th>Cases</th><th>Pending</th><th>Pending rate</th><th>Median to chargesheet</th></tr></thead><tbody id="lifecycle-table"></tbody></table></div></div>
+          <div id="lifecycle-note" class="analysis-note"></div>
+        </section>
+
+        <section class="content-panel" id="patrol-panel">
+          <div class="lab-hero"><div><span class="eyebrow">RESOURCE SCENARIO</span><h2>Patrol and resource planning</h2><p>Allocate a limited number of patrol units against recent, weighted incident demand.</p></div><div class="method-chip amber">Supervisor approval required</div></div>
+          <div class="panel-card lab-controls"><select id="patrol-district" class="filter-select"></select><label class="unit-label">Available units <input id="patrol-units" class="lab-input short" type="number" min="1" max="50" value="8"></label><button id="patrol-run" class="btn btn-primary">Build deployment scenario</button></div>
+          <div class="columns-grid"><div class="grid-col col-60"><div class="panel-card"><div class="card-header"><h3>Priority deployment zones</h3><span id="patrol-window" class="header-muted-label"></span></div><div id="patrol-map" class="planning-map"></div></div></div><div class="grid-col col-40"><div id="patrol-summary" class="metric-grid vertical"></div><div id="patrol-note" class="analysis-note"></div></div></div>
+          <div id="patrol-zones" class="lab-grid compact"></div>
         </section>
         
       </div>

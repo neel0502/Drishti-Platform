@@ -15,6 +15,8 @@ let reconstructionMap = null;
 let reconstructionLayer = null;
 let reconstructionData = null;
 let reconstructionInterval = null;
+let patrolMap = null;
+let patrolLayer = null;
 
 // DOM Ready
 document.addEventListener("DOMContentLoaded", () => {
@@ -23,6 +25,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initSearch();
   initDistrictDrilldown();
   initReconstruction();
+  initAnalyticsLabs();
   
   // Catalyst can cold-start before the analytics data is ready. Wait for
   // readiness so the first page load populates without a manual refresh.
@@ -47,6 +50,81 @@ async function initializeDashboardData() {
     fetchSituationsData(),
     fetchNetworkGroups()
   ]);
+}
+
+// ─── ANALYTICS LABS ──────────────────────────────────────────────────────
+function escapeLab(value) {
+  return String(value ?? "").replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+}
+
+function populateLabDistricts(geojson, apiDistricts = []) {
+  const districts = apiDistricts.length ? apiDistricts : geojson.features.map(feature => ({ id: feature.properties.districtId, name: feature.properties.districtName }))
+    .filter(item => item.id && item.name).filter((item, index, all) => all.findIndex(other => other.id === item.id) === index)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  ["pattern-district", "lifecycle-district", "patrol-district"].forEach(id => {
+    const select = document.getElementById(id);
+    select.innerHTML = id === "patrol-district" ? '' : '<option value="">All Karnataka</option>';
+    districts.forEach(district => select.insertAdjacentHTML('beforeend', `<option value="${district.id}">${escapeLab(district.name)}</option>`));
+  });
+  document.getElementById("patrol-district").value = districts.some(d => d.id === 1) ? "1" : String(districts[0]?.id || "");
+}
+
+function initAnalyticsLabs() {
+  document.getElementById("pattern-run").addEventListener("click", runPatternDiscovery);
+  document.getElementById("lifecycle-run").addEventListener("click", runLifecycleAnalysis);
+  document.getElementById("patrol-run").addEventListener("click", runPatrolPlan);
+}
+
+async function fetchLab(path, button) {
+  const original = button.textContent;
+  button.disabled = true; button.textContent = "Analysing…";
+  try {
+    const response = await fetch(`${API_BASE}${path}`); const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "Analysis failed");
+    return body;
+  } finally { button.disabled = false; button.textContent = original; }
+}
+
+async function runPatternDiscovery() {
+  const button = document.getElementById("pattern-run");
+  const params = new URLSearchParams({ clusterCount: document.getElementById("pattern-count").value });
+  const fields = { districtId:"pattern-district", crimeHeadId:"pattern-category", dateFrom:"pattern-from", dateTo:"pattern-to" };
+  Object.entries(fields).forEach(([key, id]) => { const value = document.getElementById(id).value; if (value) params.set(key, value); });
+  try {
+    const data = await fetchLab(`/patterns/discover?${params}`, button);
+    document.getElementById("pattern-summary").innerHTML = `<strong>${data.clusters.length} patterns</strong> discovered across ${data.sampledCaseCount.toLocaleString()} sampled FIRs (${data.caseCount.toLocaleString()} matched). ${escapeLab(data.method)}<br><span style="color:var(--alert-amber)">${escapeLab(data.caveat)}</span>`;
+    document.getElementById("pattern-results").innerHTML = data.clusters.map(cluster => `<article class="cluster-card"><div class="cluster-head"><h3 class="cluster-title">Pattern ${cluster.id} · ${escapeLab(cluster.topCrimeTypes[0])}</h3><span class="cluster-score">${cluster.cohesion}% cohesion</span></div><div class="funnel-label">${cluster.size.toLocaleString()} cases · ${cluster.share}% of sample · ${cluster.dateSpan.from} to ${cluster.dateSpan.to}</div>${cluster.qualityFlag ? `<div class="quality-flag">${escapeLab(cluster.qualityFlag)} · ${cluster.uniqueNarrativeRate}% unique narratives</div>` : ''}<div class="term-row">${cluster.topTerms.map(term => `<span class="term-pill">${escapeLab(term)}</span>`).join('')}</div><div class="funnel-label">Concentrations: ${cluster.topDistricts.map(escapeLab).join(' · ')}</div>${cluster.representativeCases.map(item => `<div class="case-evidence"><a href="#" onclick="fillSearch('${escapeLab(item.crimeNo)}');return false;">FIR ${escapeLab(item.crimeNo)}</a> · ${escapeLab(item.district)} · ${item.date}<p>${escapeLab(item.facts)}</p></div>`).join('')}</article>`).join('');
+  } catch (error) { document.getElementById("pattern-summary").textContent = error.message; }
+}
+
+async function runLifecycleAnalysis() {
+  const button = document.getElementById("lifecycle-run"); const district = document.getElementById("lifecycle-district").value;
+  try {
+    const data = await fetchLab(`/lifecycle${district ? `?districtId=${district}` : ''}`, button); const initial = data.funnel[0].count;
+    document.getElementById("lifecycle-funnel").innerHTML = data.funnel.map(stage => `<div class="funnel-stage"><div class="funnel-label">${escapeLab(stage.stage)}</div><div class="funnel-value">${stage.count.toLocaleString()}</div><div class="funnel-label">${Math.round(stage.count / initial * 100)}% of FIRs</div></div>`).join('');
+    const metrics = [[data.timings.medianFIRToArrestDays,"Median days: FIR → arrest"],[data.timings.medianFIRToChargesheetDays,"Median days: FIR → chargesheet"],[data.exceptions.arrestWithoutChargesheet,"Arrest, no chargesheet",true],[data.exceptions.chargesheetWithoutArrest,"Chargesheet, no arrest",true],[data.exceptions.pendingOver90Days,"Pending over 90 days",true],[data.exceptions.chronologyConflicts,"Chronology conflicts",true]];
+    document.getElementById("lifecycle-metrics").innerHTML = metrics.map(([value,label,alert]) => `<div class="metric-card ${alert ? 'alert':''}"><div class="value">${value ?? '—'}</div><div class="label">${escapeLab(label)}</div></div>`).join('');
+    document.getElementById("lifecycle-table").innerHTML = data.bottlenecks.map(row => `<tr><td>${escapeLab(row.station)}</td><td>${row.cases}</td><td>${row.pending}</td><td>${row.pendingRate}%</td><td>${row.medianChargeDays == null ? '—' : `${Math.round(row.medianChargeDays)} days`}</td></tr>`).join('');
+    document.getElementById("lifecycle-note").textContent = `${data.district} · analysis date ${data.analysisDate}. ${data.method}`;
+  } catch (error) { document.getElementById("lifecycle-note").textContent = error.message; }
+}
+
+async function runPatrolPlan() {
+  const button = document.getElementById("patrol-run"); const district = document.getElementById("patrol-district").value; const units = document.getElementById("patrol-units").value;
+  try {
+    const data = await fetchLab(`/patrol/plan?districtId=${district}&availableUnits=${units}`, button); renderPatrolMap(data.zones);
+    document.getElementById("patrol-window").textContent = `${data.analysisWindow.from} to ${data.analysisWindow.to}`;
+    document.getElementById("patrol-summary").innerHTML = `<div class="metric-card"><div class="value">${data.availableUnits}</div><div class="label">Units allocated</div></div><div class="metric-card"><div class="value">${data.coverageIndex}%</div><div class="label">Weighted demand coverage</div></div><div class="metric-card"><div class="value">${data.zones.filter(z => z.allocatedUnits > 0).length}</div><div class="label">Staffed priority zones</div></div>`;
+    document.getElementById("patrol-note").className = "analysis-note warning"; document.getElementById("patrol-note").innerHTML = `${escapeLab(data.method)}<br><strong>${escapeLab(data.caveat)}</strong>`;
+    document.getElementById("patrol-zones").innerHTML = data.zones.map(zone => `<article class="cluster-card ${zone.allocatedUnits ? '' : 'zone-card-zero'}"><div class="cluster-head"><h3>${zone.zone} · ${escapeLab(zone.topCrime)}</h3><span class="cluster-score">${zone.allocatedUnits} unit${zone.allocatedUnits === 1 ? '' : 's'}</span></div><div class="funnel-label">Peak ${escapeLab(zone.peakWindow)} · score ${zone.riskScore}</div><p style="margin-top:8px;color:var(--text-secondary);font-size:11px">${escapeLab(zone.rationale)}</p></article>`).join('');
+  } catch (error) { document.getElementById("patrol-note").textContent = error.message; }
+}
+
+function renderPatrolMap(zones) {
+  if (!patrolMap) { patrolMap = L.map("patrol-map", { zoomControl:true }); L.tileLayer(mapTilesUrl, { attribution:mapAttrib }).addTo(patrolMap); }
+  if (patrolLayer) patrolLayer.remove(); patrolLayer = L.layerGroup().addTo(patrolMap);
+  zones.forEach(zone => { const marker = L.marker([zone.lat,zone.lng], { icon:L.divIcon({ className:'zone-marker', html:zone.zone, iconSize:[34,34] }) }); marker.bindPopup(`<strong>${zone.zone}: ${escapeLab(zone.topCrime)}</strong><br>${zone.allocatedUnits} units · ${zone.cases} cases<br>Peak ${escapeLab(zone.peakWindow)}`).addTo(patrolLayer); L.circle([zone.lat,zone.lng], { radius:1300 + zone.riskScore*18, color:zone.allocatedUnits ? '#58A6FF':'#484F58', fillOpacity:.12, weight:1 }).addTo(patrolLayer); });
+  patrolMap.fitBounds(L.latLngBounds(zones.map(zone => [zone.lat,zone.lng])).pad(.2));
 }
 
 // ─── NAVIGATION ───────────────────────────────────────────────────────────
@@ -82,6 +160,8 @@ function initNavigation() {
           profileMap.invalidateSize();
         } else if (target === "networks" && networkInstance) {
           networkInstance.fit();
+        } else if (target === "patrol" && patrolMap) {
+          patrolMap.invalidateSize();
         }
       }, 100);
     });
@@ -281,6 +361,7 @@ async function fetchMapData() {
     const data = await res.json();
     districtGeoJSON = data.geojson;
     mapIncidents = data.incidents;
+    populateLabDistricts(data.geojson, data.districts);
     
     initMapLayers(data.geojson, mapIncidents);
     updateSliderChart(data.hourlyDistribution);

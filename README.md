@@ -20,6 +20,9 @@ It turns synthetic SCRB-style records into a state-level command dashboard, geog
 - Evidence-aware incident reconstruction with a map timeline and explicit inferred steps
 - Missing-link reporting for absent identifiers, routes, CCTV, arrests, victims, and chargesheets
 - Human-reviewed operational recommendations with a prototype action audit trail
+- Pattern-discovery laboratory that clusters a selected FIR slice at request time and links every result to representative cases
+- Case lifecycle intelligence with FIR-to-arrest and FIR-to-chargesheet timing, exception counts, and station bottlenecks
+- Patrol resource scenarios that allocate a fixed unit pool against explainable 90-day historical demand
 
 ## Architecture
 
@@ -30,6 +33,9 @@ Synthetic SCRB CSV/GeoJSON
 FastAPI ingestion and analytics
   |-- aggregate indicators
   |-- TF-IDF case similarity
+  |-- interactive narrative clustering
+  |-- lifecycle joins and delay analysis
+  |-- explainable patrol demand allocation
   |-- NetworkX link analysis
           |
           v

@@ -111,3 +111,35 @@ def test_operational_action_is_audited_with_human_status():
     assert result["actionId"] == 1
     assert result["status"] == "pending human review"
     assert analytics.get_operational_actions(50005)["actions"][0]["rationale"] == request.rationale
+
+
+def test_pattern_lab_discovers_clusters_with_linked_cases():
+    payload = analytics.discover_patterns(
+        districtId=1, crimeHeadId=None, dateFrom=None, dateTo=None, clusterCount=3
+    )
+
+    assert len(payload["clusters"]) == 3
+    assert sum(cluster["size"] for cluster in payload["clusters"]) == payload["sampledCaseCount"]
+    assert all(cluster["topTerms"] for cluster in payload["clusters"])
+    assert all(cluster["representativeCases"] for cluster in payload["clusters"])
+    assert all("uniqueNarrativeRate" in cluster for cluster in payload["clusters"])
+
+
+def test_case_lifecycle_reconciles_funnel_and_exceptions():
+    payload = analytics.case_lifecycle(districtId=1)
+    funnel = {stage["stage"]: stage["count"] for stage in payload["funnel"]}
+
+    assert funnel["FIR registered"] > funnel["Arrest recorded"]
+    assert funnel["Arrest recorded"] >= funnel["Chargesheet filed"]
+    assert payload["timings"]["medianFIRToArrestDays"] >= 0
+    assert payload["bottlenecks"]
+    assert payload["exceptions"]["chronologyConflicts"] == 0
+
+
+def test_patrol_plan_allocates_exact_available_units_and_labels_limitations():
+    payload = analytics.patrol_plan(districtId=1, availableUnits=8)
+
+    assert sum(zone["allocatedUnits"] for zone in payload["zones"]) == 8
+    assert 0 < payload["coverageIndex"] <= 100
+    assert all(zone["rationale"] for zone in payload["zones"])
+    assert "does not predict" in payload["caveat"]
