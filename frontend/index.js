@@ -1609,9 +1609,10 @@ function loadAlertDetails(alertId) {
     </div>
     
     <div class="flex-actions-row" style="display:flex; gap:10px;">
-      <button class="btn btn-primary" onclick="alert('Notification dispatched to local unit SP.')">Dispatch SP Action Notice</button>
-      <button class="btn btn-secondary" onclick="alert('Situation report generated as PDF.')">Export Intelligence Report</button>
+      <button class="btn btn-primary" id="alert-dispatch-action" ${alert.cases?.length ? "" : "disabled"}>Record SP Review Request</button>
+      <a class="btn btn-secondary ${alert.cases?.length ? "" : "disabled-link"}" id="alert-export-report" ${alert.cases?.length ? "" : 'href="#" aria-disabled="true"'}>Open FIR Intelligence Brief</a>
     </div>
+    <div id="alert-action-status" class="audit-result"></div>
   `;
   
   // 1. Render case cards
@@ -1642,6 +1643,33 @@ function loadAlertDetails(alertId) {
     });
   } else {
     evidencePanel.style.display = "none";
+  }
+
+  const primaryCase = alert.cases?.[0];
+  if (primaryCase) {
+    document.getElementById("alert-export-report").href = `${API_BASE}/cases/${encodeURIComponent(primaryCase.id || primaryCase.caseId)}/brief.pdf`;
+    document.getElementById("alert-export-report").target = "_blank";
+    document.getElementById("alert-dispatch-action").addEventListener("click", async () => {
+      const status = document.getElementById("alert-action-status");
+      status.textContent = "Recording request…";
+      try {
+        const response = await fetch(`${API_BASE}/actions`, {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({
+            caseId:Number(primaryCase.id || primaryCase.caseId),
+            actionType:"sp-review-request",
+            rationale:`Review situation: ${alert.title}`,
+            approved:false
+          })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "Unable to record action");
+        status.textContent = `Recorded as action ${result.actionId} · ${result.status}.`;
+      } catch (error) {
+        status.textContent = `Action failed: ${error.message}`;
+      }
+    });
   }
   
   // 2. Render Map coordinates for these alerts

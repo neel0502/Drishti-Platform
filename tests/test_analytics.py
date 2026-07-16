@@ -213,3 +213,50 @@ def test_catalyst_zcql_rows_are_flattened():
     nested = {"CaseMaster": {"CaseMasterID": 7, "CrimeNo": "FIR-7"}}
 
     assert catalyst_store._flatten_zcql_row(nested, "CaseMaster")["CaseMasterID"] == 7
+
+
+def test_profile_selector_and_profile_contract_are_usable():
+    options = analytics.get_profile_options(limit=10)["profiles"]
+
+    assert options
+    profile = analytics.get_suspect_profile(options[0]["name"])
+    assert profile["name"]
+    assert isinstance(profile["timeline"], list)
+    assert isinstance(profile["movement"], list)
+    assert all({"lat", "lng", "district", "date"} <= point.keys() for point in profile["movement"])
+
+
+def test_reconstruction_selector_returns_loadable_cases():
+    options = analytics.get_reconstruction_options(limit=10)["cases"]
+
+    assert options
+    payload = analytics.build_incident_reconstruction(options[0]["caseId"])
+    assert payload["case"]["caseId"] == options[0]["caseId"]
+    assert payload["events"]
+
+
+def test_each_primary_screen_has_nonempty_data_contract():
+    contracts = {
+        "home": analytics.get_dashboard(),
+        "map": analytics.get_map_data(),
+        "situations": analytics.get_situations(),
+        "district": analytics.get_district_details(1),
+        "networks": analytics.build_computed_crime_networks(),
+        "lifecycle": analytics.case_lifecycle(districtId=1),
+        "patrol": analytics.patrol_plan(
+            districtId=1, availableUnits=4, heinousWeight=1.5,
+            recencyWeight=0.75, shiftStart=0, shiftEnd=23,
+        ),
+        "quality": analytics.data_quality_command_centre(districtId=1),
+        "forecast": analytics.forecast_backtest(districtId=1, crimeHeadId=None, holdoutMonths=3),
+    }
+
+    assert contracts["home"]["kpi"]
+    assert contracts["map"]["geojson"]["features"]
+    assert contracts["situations"]["alerts"]
+    assert contracts["district"]["stations"]
+    assert contracts["networks"]["selectedGroup"]["nodes"]
+    assert contracts["lifecycle"]["funnel"]
+    assert contracts["patrol"]["zones"]
+    assert contracts["quality"]["checks"]
+    assert contracts["forecast"]["series"]
