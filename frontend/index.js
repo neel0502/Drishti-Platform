@@ -21,6 +21,7 @@ let forecastChart = null;
 
 // DOM Ready
 document.addEventListener("DOMContentLoaded", () => {
+  initOperationalShell();
   initNavigation();
   initMapFilters();
   initSearch();
@@ -34,6 +35,56 @@ document.addEventListener("DOMContentLoaded", () => {
   // readiness so the first page load populates without a manual refresh.
   initializeDashboardData();
 });
+
+const workspaceMeta = {
+  home:["Command","State Command Overview"],
+  alerts:["Command","Situations and Watches"],
+  drilldown:["Command","District Drill-Down"],
+  search:["Investigate","Search and Investigate"],
+  profile:["Investigate","Intelligence Profile"],
+  reconstruction:["Investigate","Incident Reconstruction"],
+  networks:["Investigate","Crime Networks"],
+  hypotheses:["Investigate","Hypothesis Board"],
+  map:["Analyse","State Crime Map"],
+  patterns:["Analyse","Pattern Discovery Lab"],
+  lifecycle:["Analyse","Case Lifecycle Intelligence"],
+  forecast:["Analyse","Forecast Validation"],
+  patrol:["Deploy","Patrol and Resource Planning"],
+  quality:["Govern","Data Quality and Integrity"]
+};
+
+function initOperationalShell() {
+  const themeToggle = document.getElementById("theme-toggle");
+  const storedTheme = localStorage.getItem("drishti-theme");
+  const applyTheme = dark => {
+    document.body.classList.toggle("dark-mode", dark);
+    themeToggle.textContent = dark ? "☀" : "◐";
+    themeToggle.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
+  };
+  applyTheme(storedTheme === "dark");
+  themeToggle.addEventListener("click", () => {
+    const dark = !document.body.classList.contains("dark-mode");
+    applyTheme(dark);
+    localStorage.setItem("drishti-theme", dark ? "dark" : "light");
+  });
+
+  document.getElementById("current-header-date").textContent = new Intl.DateTimeFormat("en-IN", {
+    weekday:"short", day:"2-digit", month:"short", year:"numeric"
+  }).format(new Date());
+
+  document.querySelectorAll("[data-open-panel]").forEach(button => {
+    button.addEventListener("click", () => {
+      document.querySelector(`.nav-link[data-target="${button.dataset.openPanel}"]`)?.click();
+    });
+  });
+}
+
+function updateWorkspaceHeader(target) {
+  const [group, title] = workspaceMeta[target] || ["Operations","Drishti Workspace"];
+  document.getElementById("workspace-group").textContent = group;
+  document.getElementById("workspace-title").textContent = title;
+  document.title = `${title} — Drishti`;
+}
 
 async function initializeDashboardData() {
   for (let attempt = 0; attempt < 30; attempt += 1) {
@@ -249,6 +300,7 @@ function initNavigation() {
       document.getElementById(`${target}-panel`).classList.add("active");
       
       activePanel = target;
+      updateWorkspaceHeader(target);
       if (!labLoaded.has(target)) {
         labLoaded.add(target);
         if (target === "patterns") runPatternDiscovery();
