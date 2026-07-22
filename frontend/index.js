@@ -20,6 +20,7 @@ let patrolLayer = null;
 let forecastChart = null;
 let activeNetworkGraph = null;
 let profileLoaded = false;
+let currentProfile = null;
 
 // DOM Ready
 document.addEventListener("DOMContentLoaded", () => {
@@ -852,6 +853,10 @@ function initSearch() {
       document.getElementById("search-guidance").textContent = "Enter at least two characters, or choose a validated scenario.";
       return;
     }
+
+    // The global input is the entry point to investigation. Make results
+    // visible immediately rather than leaving them hidden on the prior screen.
+    if (activePanel !== "search") triggerNav("search");
     
     try {
       const res = await fetch(`${API_BASE}/search?q=${encodeURIComponent(q)}`);
@@ -1232,6 +1237,7 @@ async function loadSuspectProfile(name) {
     state.className = "analysis-note";
     state.textContent = `Loading evidence linked to ${name}…`;
     const data = await fetchJson(`/profile/${encodeURIComponent(name)}`);
+    currentProfile = data;
     
     // Render text data
     document.getElementById("profile-name").textContent = data.name;
@@ -1294,6 +1300,16 @@ async function loadSuspectProfile(name) {
     }, 120);
     state.className = "analysis-note";
     state.textContent = `${data.timeline.length} linked FIRs and ${data.movement.length} mapped incident coordinates loaded from Catalyst.`;
+
+    const nextActions = document.getElementById("profile-next-actions");
+    const networkButton = document.getElementById("profile-open-network");
+    const reconstructionButton = document.getElementById("profile-open-reconstruction");
+    nextActions.hidden = false;
+    networkButton.onclick = () => triggerNav("networks");
+    reconstructionButton.disabled = !data.timeline.length;
+    reconstructionButton.onclick = () => {
+      if (data.timeline[0]?.id) loadIncidentReconstruction(data.timeline[0].id);
+    };
     
   } catch (err) {
     console.error("Failed loading suspect profile:", err);
@@ -1302,6 +1318,7 @@ async function loadSuspectProfile(name) {
     state.textContent = `Profile unavailable: ${err.message}`;
     document.getElementById("profile-name").textContent = "Profile could not be loaded";
     document.getElementById("profile-timeline").innerHTML = `<div class="empty-state-detail"><p>${escapeLab(err.message)}</p></div>`;
+    document.getElementById("profile-next-actions").hidden = true;
   }
 }
 

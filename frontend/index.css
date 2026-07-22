@@ -2514,6 +2514,7 @@ body.dark-mode {
   box-shadow:0 7px 20px rgba(24,55,88,.07);
 }
 .context-selector-bar strong { display:block; margin-top:3px; font-size:12px; }
+.investigation-next-actions { display:flex; flex-wrap:wrap; gap:9px; margin-top:13px; }
 .context-select {
   width:100%;
   min-height:40px;
