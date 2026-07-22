@@ -21,6 +21,8 @@ let forecastChart = null;
 let activeNetworkGraph = null;
 let profileLoaded = false;
 let currentProfile = null;
+let mockFir = null;
+let mockExtraction = null;
 
 // DOM Ready
 document.addEventListener("DOMContentLoaded", () => {
@@ -31,6 +33,8 @@ document.addEventListener("DOMContentLoaded", () => {
   initDistrictDrilldown();
   initReconstruction();
   initAnalyticsLabs();
+  initRoleWorkspaces();
+  initMockIntake();
   initResponsiveShell();
   loadDemoScenarios();
   
@@ -53,8 +57,115 @@ const workspaceMeta = {
   lifecycle:["Analyse","Case Lifecycle Intelligence"],
   forecast:["Analyse","Forecast Validation"],
   patrol:["Deploy","Patrol and Resource Planning"],
-  quality:["Govern","Data Quality and Integrity"]
+  quality:["Govern","Data Quality and Integrity"],
+  intake:["Investigate","Mock FIR and Evidence Intake"]
 };
+
+const roleWorkspaces = {
+  command: {
+    guidance: "Statewide oversight, cross-district approvals, and resource coordination.",
+    allowed: ["home","alerts","drilldown","search","intake","profile","reconstruction","networks","hypotheses","map","patterns","lifecycle","forecast","patrol","quality"],
+    defaultPanel: "home"
+  },
+  district: {
+    guidance: "District supervision, station performance, investigations, and coordination requests.",
+    allowed: ["home","alerts","drilldown","search","intake","profile","reconstruction","networks","hypotheses","map","patterns","lifecycle","patrol","quality"],
+    defaultPanel: "drilldown"
+  },
+  station: {
+    guidance: "Register a mock FIR, inspect leads, identify evidence gaps, and request support.",
+    allowed: ["home","search","intake","profile","reconstruction","networks","hypotheses","map","lifecycle","quality"],
+    defaultPanel: "intake"
+  },
+  patrol: {
+    guidance: "Review shift risk, priority zones, situations, and allocated patrol units.",
+    allowed: ["home","alerts","map","patrol"],
+    defaultPanel: "patrol"
+  },
+  analyst: {
+    guidance: "Link entities, analyse evidence, test hypotheses, and produce intelligence support.",
+    allowed: ["home","search","intake","profile","reconstruction","networks","hypotheses","map","patterns","lifecycle","forecast","quality"],
+    defaultPanel: "search"
+  }
+};
+
+function initRoleWorkspaces() {
+  const select = document.getElementById("role-select");
+  const storedRole = localStorage.getItem("drishti-demo-role") || "command";
+  select.value = roleWorkspaces[storedRole] ? storedRole : "command";
+  const applyRole = (role, shouldNavigate = false) => {
+    const config = roleWorkspaces[role] || roleWorkspaces.command;
+    document.getElementById("role-guidance").textContent = config.guidance;
+    document.querySelectorAll(".nav-link").forEach(link => {
+      link.hidden = !config.allowed.includes(link.dataset.target);
+    });
+    document.body.dataset.demoRole = role;
+    localStorage.setItem("drishti-demo-role", role);
+    if (!config.allowed.includes(activePanel) || shouldNavigate) triggerNav(config.defaultPanel);
+  };
+  applyRole(select.value);
+  select.addEventListener("change", () => applyRole(select.value, true));
+}
+
+function initMockIntake() {
+  const firForm = document.getElementById("mock-fir-form");
+  const evidenceForm = document.getElementById("mock-evidence-form");
+  const searchButton = document.getElementById("mock-open-search");
+  const reconstructionButton = document.getElementById("mock-open-reconstruction");
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  document.getElementById("mock-incident-time").value = now.toISOString().slice(0, 16);
+
+  firForm.addEventListener("submit", event => {
+    event.preventDefault();
+    const incidentTime = document.getElementById("mock-incident-time").value;
+    mockFir = {
+      id: `DEMO-${Date.now().toString().slice(-6)}`,
+      complainant: document.getElementById("mock-complainant").value.trim(),
+      offence: document.getElementById("mock-offence").value,
+      location: document.getElementById("mock-location").value.trim(),
+      incidentTime,
+      narrative: document.getElementById("mock-narrative").value.trim()
+    };
+    document.getElementById("mock-fir-status").textContent = `Demo FIR ${mockFir.id} created locally. It is not written to Catalyst or any police record system.`;
+    refreshMockHandoff();
+  });
+
+  evidenceForm.addEventListener("submit", event => {
+    event.preventDefault();
+    const file = document.getElementById("mock-evidence-file").files[0];
+    const sampleText = document.getElementById("mock-evidence-text").value.trim();
+    const source = [sampleText, mockFir?.narrative || ""].filter(Boolean).join(" ");
+    const phones = [...new Set(source.match(/(?:\+91[-\s]?)?[6-9]\d{4}[-\s]?\d{5}/g) || [])];
+    const vehicles = [...new Set(source.match(/\b(?:KA|MH|DL|TN)-?\d{2}[ -]?[A-Z]{1,3}[ -]?\d{3,4}\b/gi) || [])];
+    const time = source.match(/\b(?:[01]?\d|2[0-3])(?::[0-5]\d)?\s?(?:AM|PM)\b/i)?.[0];
+    const location = mockFir?.location || (source.match(/near\s+([^,.]+)/i)?.[1]);
+    mockExtraction = { phones, vehicles, time, location, fileName: file?.name || "Pasted sample note" };
+    document.getElementById("mock-evidence-status").textContent = `Mock extraction complete from ${mockExtraction.fileName}. No file was sent outside this browser.`;
+    const results = document.getElementById("mock-extraction-results");
+    results.classList.remove("empty-state-detail");
+    results.innerHTML = `<strong>Extracted investigation leads</strong><div class="extraction-grid"><div><span>Phone identifiers</span><b>${phones.length ? phones.map(escapeLab).join(", ") : "None found"}</b></div><div><span>Vehicle identifiers</span><b>${vehicles.length ? vehicles.map(escapeLab).join(", ") : "None found"}</b></div><div><span>Time clue</span><b>${escapeLab(time || "Not stated")}</b></div><div><span>Location clue</span><b>${escapeLab(location || "Not stated")}</b></div></div><p>API handoff ready: entity extraction, similarity search, and evidence-gap assessment.</p>`;
+    refreshMockHandoff();
+  });
+
+  searchButton.addEventListener("click", () => {
+    const lead = mockExtraction?.phones?.[0] || mockExtraction?.vehicles?.[0] || mockFir?.offence || "Chain Snatching";
+    fillSearch(lead);
+  });
+  reconstructionButton.addEventListener("click", () => triggerNav("reconstruction"));
+}
+
+function refreshMockHandoff() {
+  const hasFir = Boolean(mockFir);
+  const hasExtraction = Boolean(mockExtraction);
+  document.getElementById("mock-open-search").disabled = !(hasFir || hasExtraction);
+  document.getElementById("mock-open-reconstruction").disabled = !hasFir;
+  document.getElementById("mock-handoff-copy").textContent = hasFir && hasExtraction
+    ? `Demo FIR ${mockFir.id} now has extractable leads. Search historic intelligence, then inspect a reconstruction and missing-evidence checklist.`
+    : hasFir
+      ? `Demo FIR ${mockFir.id} is ready. Add a sample evidence note to extract phone, vehicle, time, and location leads.`
+      : "Create a demo FIR and extract a lead to generate a traceable investigation handoff.";
+}
 
 function initOperationalShell() {
   const themeToggle = document.getElementById("theme-toggle");
