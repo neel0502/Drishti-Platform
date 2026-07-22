@@ -845,6 +845,24 @@ function fillSearch(value) {
 // ─── SCREEN 3: SEARCH & INVESTIGATE ───────────────────────────────────────
 function initSearch() {
   const searchInput = document.getElementById("global-search-input");
+  const searchSubmit = document.getElementById("global-search-submit");
+  const openSearchWorkspace = () => {
+    if (activePanel !== "search") triggerNav("search");
+  };
+  const runSearch = () => searchInput.dispatchEvent(new Event("input"));
+
+  searchInput.addEventListener("focus", openSearchWorkspace);
+  searchInput.addEventListener("keydown", event => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      openSearchWorkspace();
+      runSearch();
+    }
+  });
+  searchSubmit.addEventListener("click", () => {
+    openSearchWorkspace();
+    runSearch();
+  });
   
   searchInput.addEventListener("input", async (e) => {
     const q = e.target.value.trim();
@@ -856,7 +874,7 @@ function initSearch() {
 
     // The global input is the entry point to investigation. Make results
     // visible immediately rather than leaving them hidden on the prior screen.
-    if (activePanel !== "search") triggerNav("search");
+    openSearchWorkspace();
     
     try {
       const res = await fetch(`${API_BASE}/search?q=${encodeURIComponent(q)}`);
@@ -1304,9 +1322,15 @@ async function loadSuspectProfile(name) {
     const nextActions = document.getElementById("profile-next-actions");
     const networkButton = document.getElementById("profile-open-network");
     const reconstructionButton = document.getElementById("profile-open-reconstruction");
-    nextActions.hidden = false;
-    networkButton.onclick = () => triggerNav("networks");
+    networkButton.disabled = false;
     reconstructionButton.disabled = !data.timeline.length;
+    const linkedGroup = /snatch/i.test(data.moDescription || "")
+      ? "Indiranagar Chain Snatching Group"
+      : "Drill & Enter Group";
+    networkButton.onclick = () => {
+      triggerNav("networks");
+      window.setTimeout(() => fetchNetworkGroupGraph(linkedGroup), 140);
+    };
     reconstructionButton.onclick = () => {
       if (data.timeline[0]?.id) loadIncidentReconstruction(data.timeline[0].id);
     };
@@ -1318,7 +1342,8 @@ async function loadSuspectProfile(name) {
     state.textContent = `Profile unavailable: ${err.message}`;
     document.getElementById("profile-name").textContent = "Profile could not be loaded";
     document.getElementById("profile-timeline").innerHTML = `<div class="empty-state-detail"><p>${escapeLab(err.message)}</p></div>`;
-    document.getElementById("profile-next-actions").hidden = true;
+    document.getElementById("profile-open-network").disabled = true;
+    document.getElementById("profile-open-reconstruction").disabled = true;
   }
 }
 
@@ -1527,6 +1552,7 @@ function renderNetworkFallback(container, graphData) {
     </g>`;
   }).join("");
   container.innerHTML = `<svg class="fallback-network-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Crime relationship network">${edges}${nodes}</svg>`;
+  document.getElementById("network-graph-status").textContent = `${graphData.nodes.length} entities and ${graphData.edges.length} evidence links shown. Double-click a suspect node to open their profile.`;
   container.querySelectorAll("[data-profile]:not([data-profile=''])").forEach(node =>
     node.addEventListener("dblclick", () => loadSuspectProfile(node.dataset.profile))
   );

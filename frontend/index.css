@@ -2184,6 +2184,19 @@ body.dark-mode {
   font:600 9px 'JetBrains Mono',monospace;
   box-shadow:0 1px 2px rgba(0,0,0,.08);
 }
+.search-submit {
+  flex:0 0 auto;
+  min-height:30px;
+  padding:0 10px;
+  border:0;
+  border-radius:7px;
+  background:var(--accent-blue);
+  color:#fff;
+  font:700 10px 'Manrope',sans-serif;
+  letter-spacing:.01em;
+  cursor:pointer;
+}
+.search-submit:hover { filter:brightness(1.08); }
 .global-search-bar:focus-within {
   border-color:#3b82c4;
   box-shadow:0 0 0 4px rgba(35,112,179,.13),0 8px 24px rgba(23,61,101,.12);
@@ -2444,6 +2457,12 @@ body.dark-mode {
   color:var(--text-secondary);
   font-size:clamp(10px,.9vw,12px);
   line-height:1.45;
+}
+.network-render-status {
+  margin:-3px 0 9px;
+  color:var(--text-secondary);
+  font-size:11px;
+  font-weight:650;
 }
 .network-canvas {
   flex:1 1 auto;

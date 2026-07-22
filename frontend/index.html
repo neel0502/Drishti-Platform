@@ -120,6 +120,7 @@
           <div class="global-search-bar">
             <span class="search-command-icon"><svg class="search-icon" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg></span>
             <input type="text" id="global-search-input" placeholder="Search intelligence across Karnataka">
+            <button class="search-submit" id="global-search-submit" type="button">Investigate</button>
             <span class="search-shortcut">⌘ K</span>
           </div>
         </div>
@@ -419,9 +420,9 @@
             </div>
             <div class="profile-alias" id="profile-alias"></div>
             <div class="profile-meta-subtitle" id="profile-demographics">Choose a linked accused record above.</div>
-            <div class="investigation-next-actions" id="profile-next-actions" hidden>
-              <button class="btn btn-secondary" id="profile-open-network" type="button">View linked crime network</button>
-              <button class="btn btn-primary" id="profile-open-reconstruction" type="button">Reconstruct latest linked FIR</button>
+            <div class="investigation-next-actions" id="profile-next-actions">
+              <button class="btn btn-secondary" id="profile-open-network" type="button" disabled>View linked crime network</button>
+              <button class="btn btn-primary" id="profile-open-reconstruction" type="button" disabled>Reconstruct latest linked FIR</button>
             </div>
           </div>
           
@@ -542,6 +543,7 @@
                 <div class="network-explanatory-header" id="network-explanation">
                   3 suspects are linked to 60 burglaries across Bangalore, Mysuru, and Belagavi. Text analysis matches their locks-drilling Modus Operandi. They shared a phone and a getaway vehicle.
                 </div>
+                <div class="network-render-status" id="network-graph-status">Select a syndicate to load its evidence-linked network.</div>
                 <div id="network-graph-canvas" class="network-canvas"></div>
                 <div class="network-footer-legend">
                   <div class="legend-item"><span class="legend-dot" style="background:#F85149;"></span>Accused (At Large)</div>
