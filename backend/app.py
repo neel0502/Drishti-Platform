@@ -1000,6 +1000,31 @@ def hotspot_forecast(districtId: int = Query(default=1), crimeHeadId: Optional[i
     zones.sort(key=lambda item: item["predictedIncidents"], reverse=True)
     return {"district":get_district_name(districtId),"forecastMonth":str(next_month),"zones":zones[:10],"model":"Random Forest hotspot-demand model","method":"Grid-cell FIR volume with 1–3 month lags, rolling 3-month volume, and month-of-year seasonality.","caveat":"Planning forecast only. It predicts aggregate historical demand by map cell, not an individual's behaviour or certainty of crime."}
 
+@app.get("/api/semantic-search")
+def semantic_fir_search(q: str = Query(..., min_length=4), limit: int = 8):
+    """Retrieve FIRs by narrative meaning using the deployed TF-IDF index."""
+    if tfidf_matrix is None:
+        build_nlp_index()
+    query_vector = vectorizer.transform([q.strip()])
+    similarities = cosine_similarity(query_vector, tfidf_matrix).flatten()
+    ranked = np.argsort(similarities)[::-1][:limit]
+    cases = []
+    for index in ranked:
+        row = df_case[df_case['CaseMasterID'] == case_ids_list[index]].iloc[0]
+        cases.append({
+            'id': int(row['CaseMasterID']), 'crimeNo': str(row['CrimeNo']),
+            'date': str(row['CrimeRegisteredDate']), 'type': str(row['_SubheadName']),
+            'district': get_district_name(row['_DistrictID']),
+            'status': get_case_status_name(row['CaseStatusID']), 'facts': str(row['BriefFacts']),
+            'semanticConfidence': round(float(similarities[index]) * 100, 1),
+        })
+    return {
+        'query': q, 'cases': cases, 'people': [], 'phones': [], 'vehicles': [],
+        'model': 'TF-IDF semantic FIR narrative retrieval with cosine similarity',
+        'caveat': 'Similarity ranks narrative language, not proof of a common offender, event, or legal linkage. Open and validate each FIR before action.',
+    }
+
+
 @app.get("/api/search")
 def search_investigate(q: str = Query(..., min_length=2)):
     q = q.lower().strip()

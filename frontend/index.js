@@ -1135,6 +1135,21 @@ function initCommandQueryAssistant() {
       runQuery(input.value);
     });
   });
+
+  const semanticForm = document.getElementById("semantic-query-form");
+  const semanticInput = document.getElementById("semantic-query-input");
+  const semanticResult = document.getElementById("semantic-query-result");
+  semanticForm?.addEventListener("submit", async event => {
+    event.preventDefault(); const query = semanticInput.value.trim(); if (query.length < 4) return;
+    semanticResult.hidden = false; semanticResult.innerHTML = "<strong>Finding similar FIR narratives…</strong>";
+    try {
+      const response = await fetch(`${API_BASE}/semantic-search?q=${encodeURIComponent(query)}`); const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Semantic search unavailable");
+      semanticResult.innerHTML = `<strong>AI semantic search completed.</strong><div>Top FIR similarity: ${data.cases[0]?.semanticConfidence ?? 0}%</div><div class="command-query-meta">${escapeLab(data.model)}<br>${escapeLab(data.caveat)}</div>`;
+      renderSearchResults(data);
+      document.getElementById("search-guidance").textContent = "Semantic results are narrative-similar FIRs. Validate every source FIR and do not treat similarity as a confirmed linkage.";
+    } catch (error) { semanticResult.innerHTML = `<strong>Search could not be completed</strong><span>${escapeLab(error.message)}</span>`; }
+  });
 }
 
 function renderSearchResults(data) {
@@ -1280,7 +1295,7 @@ function renderSearchResults(data) {
         <td><span class="status-pill border-pill">${c.type}</span></td>
         <td>${c.district}</td>
         <td><span class="status-pill ${c.status === 'Closed / Final Report' ? 'green-pill' : 'amber-pill'}">${c.status}</span></td>
-        <td style="max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${c.facts}</td>
+        <td style="max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${c.facts}${c.semanticConfidence != null ? ` <span class="status-pill blue-pill">Semantic ${c.semanticConfidence}%</span>` : ''}</td>
         <td>
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
             <button class="btn btn-secondary btn-sm" onclick="loadCaseMO('${c.id}')">Find MO Links</button>

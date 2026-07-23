@@ -321,6 +321,11 @@
               <div class="command-query-chips"><button type="button" data-command-query="Show repeat burglary accused in Bengaluru at night">Repeat burglary accused</button><button type="button" data-command-query="Show robbery cases in Mysuru">Robbery cases in Mysuru</button><button type="button" data-command-query="ಬೆಂಗಳೂರು ರಾತ್ರಿ ಕಳ್ಳತನ ಪುನರಾವರ್ತಿತ ಆರೋಪಿ ಪ್ರಕರಣ">Kannada burglary query</button></div>
             </form>
             <div id="command-query-result" class="command-query-result" hidden></div>
+            <form id="semantic-query-form" class="command-query-form">
+              <label for="semantic-query-input">AI Modus Operandi Search <span>Describe the crime pattern in plain language</span></label>
+              <div class="command-query-row"><input id="semantic-query-input" class="lab-input" placeholder="e.g. locked house, night entry, drill used, gold stolen" autocomplete="off"><button class="btn btn-secondary" type="submit">Find similar FIRs</button></div>
+            </form>
+            <div id="semantic-query-result" class="command-query-result" hidden></div>
             <div class="demo-scenario-header"><strong>Validated demo scenarios</strong><span>Synthetic records · click any card to run</span></div>
             <div class="demo-scenario-grid" id="demo-scenarios"><div class="loading-spinner">Loading verified scenarios…</div></div>
           </div>
@@ -771,6 +776,6 @@
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <!-- Application logic -->
-  <script src="index.js?v=20260724-offenceclassifier"></script>
+  <script src="index.js?v=20260724-semanticsearch"></script>
 </body>
 </html>
