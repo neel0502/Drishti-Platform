@@ -219,6 +219,19 @@ def insert_workflow_row(kind, row):
     return app.datastore().table(table_name).insert_row(encoded)
 
 
+def insert_schema_rows(rows_by_table):
+    """Insert a small schema-faithful FIR record graph into Catalyst."""
+    app = get_app()
+    if app is None:
+        raise RuntimeError(_error or "Catalyst SDK initialization failed")
+    created = {}
+    for table_name, rows in rows_by_table.items():
+        if rows:
+            table = app.datastore().table(table_name)
+            created[table_name] = [table.insert_row(row) for row in rows]
+    return created
+
+
 def fetch_workflow_rows(kind):
     table_name = WORKFLOW_TABLES[kind]
     rows = fetch_table(table_name)

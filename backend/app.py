@@ -56,6 +56,8 @@ df_crime_head = None
 df_crime_subhead = None
 df_status = None
 df_occupation = None
+df_employee = None
+df_court = None
 
 # NLP & Network Variables
 vectorizer = TfidfVectorizer(stop_words='english')
@@ -190,7 +192,7 @@ def extract_first_identifier(text, pattern, formatter):
 
 def load_data():
     global df_case, df_accused, df_victim, df_complainant, df_arrest, df_chargesheet
-    global df_district, df_unit, df_crime_head, df_crime_subhead, df_status, df_occupation
+    global df_district, df_unit, df_crime_head, df_crime_subhead, df_status, df_occupation, df_employee, df_court
     global pattern_a_case_ids, pattern_b_case_ids, pattern_c_case_ids
     
     global data_source_status
@@ -237,6 +239,8 @@ def load_data():
     df_crime_subhead = frames["CrimeSubHead"]
     df_status = frames["CaseStatusMaster"]
     df_occupation = frames["OccupationMaster"]
+    df_employee = frames["Employee"]
+    df_court = frames["Court"]
 
     numeric_columns = {
         "CaseMaster": ["CaseMasterID", "PoliceStationID", "CrimeMajorHeadID", "CrimeMinorHeadID", "CaseStatusID", "_DistrictID"],
@@ -1015,6 +1019,77 @@ def get_demo_scenarios():
         "scenarios": scenarios[:6],
         "notice": "Synthetic demonstration records. Validate every inference against source evidence.",
     }
+
+
+class FIRCreateRequest(BaseModel):
+    complainantName: str
+    victimName: Optional[str] = None
+    accusedName: Optional[str] = None
+    crimeMinorHeadId: int
+    policeStationId: int
+    policePersonId: int
+    incidentFromDate: datetime
+    latitude: float
+    longitude: float
+    briefFacts: str
+
+
+@app.get("/api/fir-intake-options")
+def get_fir_intake_options():
+    officers = df_employee[["EmployeeID", "UnitID", "FirstName"]].copy()
+    return {
+        "stations": [{"id": int(row.UnitID), "name": str(row.UnitName), "districtId": int(row.DistrictID)} for _, row in df_unit.head(120).iterrows()],
+        "officers": [{"id": int(row.EmployeeID), "name": str(row.FirstName), "stationId": int(row.UnitID)} for _, row in officers.head(300).iterrows()],
+        "offences": [{"id": int(row.CrimeSubHeadID), "name": str(row.CrimeHeadName)} for _, row in df_crime_subhead.iterrows()],
+    }
+
+
+@app.post("/api/firs")
+def create_development_fir(fir: FIRCreateRequest):
+    """Create a KSP-schema FIR graph in the Catalyst development datastore."""
+    if data_source_status["active"] != "catalyst":
+        raise HTTPException(status_code=503, detail="FIR creation requires Catalyst Data Store")
+    station = df_unit[df_unit["UnitID"] == fir.policeStationId]
+    officer = df_employee[df_employee["EmployeeID"] == fir.policePersonId]
+    offence = df_crime_subhead[df_crime_subhead["CrimeSubHeadID"] == fir.crimeMinorHeadId]
+    if station.empty or officer.empty or offence.empty:
+        raise HTTPException(status_code=422, detail="Select a valid KSP station, officer, and offence")
+    if not (11.5 <= fir.latitude <= 18.8 and 74.0 <= fir.longitude <= 78.8):
+        raise HTTPException(status_code=422, detail="Coordinates must be within Karnataka")
+    station_row, officer_row, offence_row = station.iloc[0], officer.iloc[0], offence.iloc[0]
+    district_id = int(station_row["DistrictID"])
+    courts = df_court[df_court["DistrictID"] == district_id]
+    court_id = int((courts.iloc[0] if not courts.empty else df_court.iloc[0])["CourtID"])
+    case_id = int(pd.to_numeric(df_case["CaseMasterID"]).max()) + 1
+    complainant_id = int(pd.to_numeric(df_complainant["ComplainantID"]).max()) + 1
+    serial = int((df_case["PoliceStationID"] == fir.policeStationId).sum()) + 1
+    year = fir.incidentFromDate.year
+    crime_no = f"1{district_id:04d}{int(fir.policeStationId):04d}{year}{serial:05d}"
+    now = datetime.now(timezone.utc)
+    case_row = {
+        "CaseMasterID": case_id, "CrimeNo": crime_no, "CaseNo": f"{year}{serial:05d}",
+        "CrimeRegisteredDate": now.date().isoformat(), "PolicePersonID": int(officer_row["EmployeeID"]),
+        "PoliceStationID": int(station_row["UnitID"]), "CaseCategoryID": 1, "GravityOffenceID": 2,
+        "CrimeMajorHeadID": int(offence_row["CrimeHeadID"]), "CrimeMinorHeadID": int(offence_row["CrimeSubHeadID"]),
+        "CaseStatusID": 1, "CourtID": court_id, "IncidentFromDate": fir.incidentFromDate.isoformat(),
+        "IncidentToDate": fir.incidentFromDate.isoformat(), "InfoReceivedPSDate": now.isoformat(),
+        "latitude": fir.latitude, "longitude": fir.longitude, "BriefFacts": fir.briefFacts.strip(),
+        "_DistrictID": district_id, "_SubheadName": str(offence_row["CrimeHeadName"]),
+    }
+    graph = {"CaseMaster": [case_row], "ComplainantDetails": [{
+        "ComplainantID": complainant_id, "CaseMasterID": case_id,
+        "ComplainantName": fir.complainantName.strip(), "GenderID": 2,
+    }]}
+    if fir.victimName and fir.victimName.strip():
+        graph["Victim"] = [{"VictimMasterID": int(pd.to_numeric(df_victim["VictimMasterID"]).max()) + 1, "CaseMasterID": case_id, "VictimName": fir.victimName.strip(), "GenderID": 2, "VictimPolice": "0"}]
+    if fir.accusedName and fir.accusedName.strip():
+        graph["Accused"] = [{"AccusedMasterID": int(pd.to_numeric(df_accused["AccusedMasterID"]).max()) + 1, "CaseMasterID": case_id, "AccusedName": fir.accusedName.strip(), "GenderID": 1, "PersonID": "A1"}]
+    try:
+        catalyst_store.insert_schema_rows(graph)
+        load_data(); build_network_graph(); build_nlp_index()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Catalyst development FIR write failed: {exc}")
+    return {"caseId": case_id, "crimeNo": crime_no, "environment": "Catalyst Development", "createdTables": list(graph.keys())}
 
 
 @app.get("/api/cases/{case_id}/links")

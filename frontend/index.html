@@ -15,7 +15,7 @@
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="index.css?v=20260723-workspaces">
+  <link rel="stylesheet" href="index.css?v=20260723-firwrite">
 </head>
 <body>
 
@@ -702,10 +702,13 @@
             <form id="mock-fir-form" class="panel-card intake-form">
               <div class="card-header"><h3>Register mock FIR</h3><span class="header-muted-label">Station Officer</span></div>
               <label>Complainant<input id="mock-complainant" class="lab-input" required placeholder="e.g. Ananya Rao"></label>
-              <label>Offence category<select id="mock-offence" class="lab-input"><option>Chain Snatching</option><option>Vehicle Theft</option><option>House Burglary</option><option>Cyber Fraud</option><option>Simple Assault</option></select></label>
+              <label>Offence category<select id="mock-offence" class="lab-input" required><option value="">Loading KSP offences…</option></select></label>
+              <div class="intake-two"><label>Police station<select id="mock-station" class="lab-input" required><option value="">Loading stations…</option></select></label><label>Registering officer<select id="mock-officer" class="lab-input" required><option value="">Loading officers…</option></select></label></div>
               <div class="intake-two"><label>Incident date & time<input id="mock-incident-time" class="lab-input" type="datetime-local" required></label><label>Location<input id="mock-location" class="lab-input" required placeholder="Indiranagar Metro Station"></label></div>
+              <div class="intake-two"><label>Latitude<input id="mock-latitude" class="lab-input" type="number" step="any" value="12.9784" required></label><label>Longitude<input id="mock-longitude" class="lab-input" type="number" step="any" value="77.6408" required></label></div>
+              <div class="intake-two"><label>Victim (optional)<input id="mock-victim" class="lab-input" placeholder="Name if known"></label><label>Accused (optional)<input id="mock-accused" class="lab-input" placeholder="Name if known"></label></div>
               <label>FIR narrative<textarea id="mock-narrative" class="lab-input lab-textarea" required placeholder="Describe what happened, who was involved, and any vehicle or phone identifiers."></textarea></label>
-              <button class="btn btn-primary" type="submit">Create demo FIR</button><div id="mock-fir-status" class="header-muted-label"></div>
+              <button class="btn btn-primary" type="submit">Create Development FIR</button><div id="mock-fir-status" class="header-muted-label"></div>
             </form>
             <form id="mock-evidence-form" class="panel-card intake-form">
               <div class="card-header"><h3>Analyse sample evidence</h3><span class="header-muted-label">API-ready connector</span></div>
@@ -750,6 +753,6 @@
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <!-- Application logic -->
-  <script src="index.js?v=20260723-workspaces"></script>
+  <script src="index.js?v=20260723-firwrite"></script>
 </body>
 </html>

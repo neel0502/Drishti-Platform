@@ -112,23 +112,52 @@ function initMockIntake() {
   const evidenceForm = document.getElementById("mock-evidence-form");
   const searchButton = document.getElementById("mock-open-search");
   const reconstructionButton = document.getElementById("mock-open-reconstruction");
+  const stationSelect = document.getElementById("mock-station");
+  const officerSelect = document.getElementById("mock-officer");
+  const offenceSelect = document.getElementById("mock-offence");
   const now = new Date();
   now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
   document.getElementById("mock-incident-time").value = now.toISOString().slice(0, 16);
 
-  firForm.addEventListener("submit", event => {
+  fetchJson("/fir-intake-options").then(options => {
+    stationSelect.innerHTML = options.stations.map(item => `<option value="${item.id}">${escapeLab(item.name)}</option>`).join("");
+    offenceSelect.innerHTML = options.offences.map(item => `<option value="${item.id}">${escapeLab(item.name)}</option>`).join("");
+    const populateOfficers = () => {
+      const stationId = Number(stationSelect.value);
+      const candidates = options.officers.filter(item => item.stationId === stationId);
+      const usable = candidates.length ? candidates : options.officers;
+      officerSelect.innerHTML = usable.map(item => `<option value="${item.id}">${escapeLab(item.name)}</option>`).join("");
+    };
+    stationSelect.addEventListener("change", populateOfficers);
+    populateOfficers();
+  }).catch(error => {
+    document.getElementById("mock-fir-status").textContent = `Schema choices unavailable: ${error.message}`;
+  });
+
+  firForm.addEventListener("submit", async event => {
     event.preventDefault();
     const incidentTime = document.getElementById("mock-incident-time").value;
-    mockFir = {
-      id: `DEMO-${Date.now().toString().slice(-6)}`,
-      complainant: document.getElementById("mock-complainant").value.trim(),
-      offence: document.getElementById("mock-offence").value,
-      location: document.getElementById("mock-location").value.trim(),
-      incidentTime,
-      narrative: document.getElementById("mock-narrative").value.trim()
+    const payload = {
+      complainantName: document.getElementById("mock-complainant").value.trim(),
+      victimName: document.getElementById("mock-victim").value.trim() || null,
+      accusedName: document.getElementById("mock-accused").value.trim() || null,
+      crimeMinorHeadId: Number(offenceSelect.value), policeStationId: Number(stationSelect.value),
+      policePersonId: Number(officerSelect.value), incidentFromDate: new Date(incidentTime).toISOString(),
+      latitude: Number(document.getElementById("mock-latitude").value), longitude: Number(document.getElementById("mock-longitude").value),
+      briefFacts: document.getElementById("mock-narrative").value.trim()
     };
-    document.getElementById("mock-fir-status").textContent = `Demo FIR ${mockFir.id} created locally. It is not written to Catalyst or any police record system.`;
-    refreshMockHandoff();
+    const status = document.getElementById("mock-fir-status");
+    status.textContent = "Creating schema-correct FIR in Catalyst Development…";
+    try {
+      const response = await fetch(`${API_BASE}/firs`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload) });
+      const created = await response.json();
+      if (!response.ok) throw new Error(created.detail || "FIR creation failed");
+      mockFir = { id: created.crimeNo, caseId: created.caseId, complainant: payload.complainantName, offence: offenceSelect.options[offenceSelect.selectedIndex].text, location: document.getElementById("mock-location").value.trim(), incidentTime, narrative: payload.briefFacts };
+      status.textContent = `Development FIR ${created.crimeNo} created in Catalyst: ${created.createdTables.join(", ")}.`;
+      refreshMockHandoff();
+    } catch (error) {
+      status.textContent = `FIR was not created: ${error.message}`;
+    }
   });
 
   evidenceForm.addEventListener("submit", event => {
@@ -161,10 +190,10 @@ function refreshMockHandoff() {
   document.getElementById("mock-open-search").disabled = !(hasFir || hasExtraction);
   document.getElementById("mock-open-reconstruction").disabled = !hasFir;
   document.getElementById("mock-handoff-copy").textContent = hasFir && hasExtraction
-    ? `Demo FIR ${mockFir.id} now has extractable leads. Search historic intelligence, then inspect a reconstruction and missing-evidence checklist.`
+      ? `Development FIR ${mockFir.id} now has extractable leads. Search historic intelligence, then inspect a reconstruction and missing-evidence checklist.`
     : hasFir
-      ? `Demo FIR ${mockFir.id} is ready. Add a sample evidence note to extract phone, vehicle, time, and location leads.`
-      : "Create a demo FIR and extract a lead to generate a traceable investigation handoff.";
+      ? `Development FIR ${mockFir.id} is created in Catalyst. Add a sample evidence note to extract phone, vehicle, time, and location leads.`
+      : "Create a development FIR and extract a lead to generate a traceable investigation handoff.";
 }
 
 function initOperationalShell() {
