@@ -1291,7 +1291,7 @@ async function loadCaseMO(caseId) {
       cases: related,
       evidence: related.slice(0, 5).map(item => ({
         label: `${item.crimeNo} · ${item.district}`,
-        value: `${item.connectionScore}/100 — ${item.evidence.map(e => e.value).join("; ")}`
+        value: `${item.connectionScore}/100 · ML link confidence ${item.mlConfidence ?? '—'}% — ${item.evidence.map(e => e.value).join("; ")}`
       })),
       recommendedAction: "Suggested response: Review the evidence for the highest-scoring links and validate the associated FIRs before merging or coordinating investigations."
     };

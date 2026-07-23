@@ -9,7 +9,7 @@ import networkx as nx
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.cluster import MiniBatchKMeans
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 import re
 import os
 import json
@@ -65,6 +65,8 @@ vectorizer = TfidfVectorizer(stop_words='english')
 tfidf_matrix = None
 case_ids_list = []
 G = nx.Graph()
+link_prediction_model = None
+link_prediction_features = []
 analytics_ready = Event()
 analytics_initialization_lock = Lock()
 analytics_error = None
@@ -349,6 +351,40 @@ def build_nlp_index():
         tfidf_matrix = vectorizer.fit_transform(facts_list)
         print(f"NLP index compiled: {tfidf_matrix.shape[0]} documents vectorized")
 
+def build_link_prediction_model():
+    """Train a small supervised FIR-pair model from known relational links."""
+    global link_prediction_model, link_prediction_features
+    if tfidf_matrix is None or not case_ids_list:
+        return
+    by_id = df_case.set_index('CaseMasterID')
+    positives = set()
+    for column in ('phone', 'vehicle'):
+        for _, group in df_case.dropna(subset=[column]).groupby(column):
+            ids = group['CaseMasterID'].astype(int).tolist()[:12]
+            for index, left in enumerate(ids):
+                for right in ids[index + 1:]: positives.add(tuple(sorted((left, right))))
+    for _, group in df_accused.groupby('AccusedName'):
+        ids = group['CaseMasterID'].astype(int).unique().tolist()[:12]
+        for index, left in enumerate(ids):
+            for right in ids[index + 1:]: positives.add(tuple(sorted((left, right))))
+    positives = list(positives)[:1000]
+    rng = np.random.default_rng(42); ids = np.asarray(case_ids_list); negatives = []
+    positive_set = set(positives)
+    while len(negatives) < len(positives):
+        pair = tuple(sorted(rng.choice(ids, size=2, replace=False).astype(int).tolist()))
+        if pair not in positive_set: negatives.append(pair)
+    index_map = {int(case_id): index for index, case_id in enumerate(case_ids_list)}
+    def vector(pair):
+        left, right = pair; a, b = by_id.loc[left], by_id.loc[right]
+        sim = float(cosine_similarity(tfidf_matrix[index_map[left]], tfidf_matrix[index_map[right]])[0][0])
+        dist = haversine_km(a['latitude'], a['longitude'], b['latitude'], b['longitude'])
+        ah, bh = pd.to_datetime(a['IncidentFromDate']).hour, pd.to_datetime(b['IncidentFromDate']).hour
+        hour = min(abs(ah-bh), 24-abs(ah-bh))
+        return [sim, int(a['_SubheadName']==b['_SubheadName']), int(a['_DistrictID']==b['_DistrictID']), max(0,1-dist/50), max(0,1-hour/12)]
+    rows = [vector(pair) for pair in positives + negatives]
+    link_prediction_model = RandomForestClassifier(n_estimators=160, max_depth=7, min_samples_leaf=2, random_state=42, n_jobs=1).fit(rows, [1]*len(positives)+[0]*len(negatives))
+    link_prediction_features = ['narrative similarity','same offence','same district','geographic proximity','time-of-day similarity']
+
 def find_similar_cases(case_id, top_n=5):
     if case_id not in case_ids_list:
         return []
@@ -407,6 +443,8 @@ def get_case_links(case_id, top_n=8):
     except (TypeError, ValueError):
         raise HTTPException(status_code=400, detail="Invalid case identifier")
 
+    if link_prediction_model is None:
+        build_link_prediction_model()
     source_rows = df_case[df_case['CaseMasterID'] == case_id]
     if source_rows.empty:
         raise HTTPException(status_code=404, detail="Case not found")
@@ -445,6 +483,10 @@ def get_case_links(case_id, top_n=8):
         connection_score = min(100, round(
             narrative_score + accused_score + identifier_score + geographic_score + time_score
         ))
+        ml_confidence = None
+        if link_prediction_model is not None:
+            features = [[candidate['similarity'], int(source['_SubheadName'] == candidate_row['_SubheadName']), int(source['_DistrictID'] == candidate_row['_DistrictID']), max(0, 1 - distance_km / 50), max(0, 1 - hour_difference / 12)]]
+            ml_confidence = round(float(link_prediction_model.predict_proba(features)[0][1]) * 100, 1)
 
         evidence = [
             {
@@ -496,6 +538,7 @@ def get_case_links(case_id, top_n=8):
             "lng": float(candidate_row['longitude']),
             "crimeType": str(candidate_row['_SubheadName']),
             "connectionScore": connection_score,
+            "mlConfidence": ml_confidence,
             "evidence": evidence,
             "missingSignals": missing_signals,
             "distanceKm": round(distance_km, 1),
