@@ -315,6 +315,10 @@ function populateLabDistricts(geojson, apiDistricts = []) {
     districts.forEach(district => select.insertAdjacentHTML('beforeend', `<option value="${district.id}">${escapeLab(district.name)}</option>`));
   });
   document.getElementById("patrol-district").value = districts.some(d => d.id === 1) ? "1" : String(districts[0]?.id || "");
+  ["forecast-district", "ai-district"].forEach(id => {
+    const select = document.getElementById(id);
+    select.value = districts.some(d => d.id === 1) ? "1" : String(districts[0]?.id || "");
+  });
 }
 
 function initAnalyticsLabs() {
