@@ -30,6 +30,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initNavigation();
   initMapFilters();
   initSearch();
+  initCommandQueryAssistant();
   initDistrictDrilldown();
   initReconstruction();
   initAnalyticsLabs();
@@ -1024,6 +1025,42 @@ function initSearch() {
     } catch (err) {
       console.error("Search query failure:", err);
     }
+  });
+}
+
+function initCommandQueryAssistant() {
+  const form = document.getElementById("command-query-form");
+  const input = document.getElementById("command-query-input");
+  const result = document.getElementById("command-query-result");
+  if (!form || !input || !result) return;
+
+  const runQuery = async value => {
+    const query = value.trim();
+    if (query.length < 4) return;
+    result.hidden = false;
+    result.innerHTML = "<strong>Analysing FIR records…</strong><span>Identifying explicit district, offence, time, and repeat-accused conditions.</span>";
+    try {
+      const response = await fetch(`${API_BASE}/command-query?q=${encodeURIComponent(query)}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Command query unavailable");
+      const suspects = (data.suspects || []).map(person => `<span>${escapeLab(person.name)} · ${person.caseCount} FIRs · ${person.districtCount} districts</span>`).join("");
+      result.innerHTML = `<strong>${escapeLab(data.answer)}</strong><div>${escapeLab(data.scope)}</div>${suspects ? `<div class="command-query-suspects">${suspects}</div>` : ""}<div class="command-query-meta">Recommended action: ${escapeLab(data.recommendedAction)}<br>${escapeLab(data.method)}</div>`;
+      renderSearchResults({ people: [], phones: [], vehicles: [], cases: data.cases || [] });
+      document.getElementById("search-guidance").textContent = "Command query results are shown below. Review the stated filters before acting on any intelligence.";
+    } catch (error) {
+      result.innerHTML = `<strong>Query could not be completed</strong><span>${escapeLab(error.message)}</span>`;
+    }
+  };
+
+  form.addEventListener("submit", event => {
+    event.preventDefault();
+    runQuery(input.value);
+  });
+  document.querySelectorAll("[data-command-query]").forEach(button => {
+    button.addEventListener("click", () => {
+      input.value = button.dataset.commandQuery;
+      runQuery(input.value);
+    });
   });
 }
 

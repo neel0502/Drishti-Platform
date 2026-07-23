@@ -951,6 +951,94 @@ def search_investigate(q: str = Query(..., min_length=2)):
     return results
 
 
+@app.get("/api/command-query")
+def command_query(q: str = Query(..., min_length=4)):
+    """Interpret a small set of officer-style questions with visible filters.
+
+    This is deliberately deterministic: the response states the FIR filters it
+    used instead of presenting a black-box conclusion as intelligence.
+    """
+    query_text = q.strip()
+    lowered = query_text.lower()
+    working = df_case.copy()
+    filters = []
+
+    # Match known KSP districts by name, allowing officers to omit words such
+    # as "district" or use a partial name in a spoken-style query.
+    district_matches = []
+    for _, district in df_district.iterrows():
+        district_name = str(district["DistrictName"])
+        tokens = [token for token in re.findall(r"[a-z]{4,}", district_name.lower())]
+        if district_name.lower() in lowered or (tokens and all(token in lowered for token in tokens)):
+            district_matches.append((int(district["DistrictID"]), district_name))
+    if district_matches:
+        district_ids = [item[0] for item in district_matches]
+        working = working[working["_DistrictID"].isin(district_ids)]
+        filters.append("District: " + ", ".join(item[1] for item in district_matches[:3]))
+
+    # Match a supplied offence phrase against the KSP crime sub-head labels.
+    offence_matches = []
+    for value in df_case["_SubheadName"].dropna().astype(str).unique():
+        words = [word for word in re.findall(r"[a-z]{4,}", value.lower())]
+        if words and any(word in lowered for word in words):
+            offence_matches.append(value)
+    if offence_matches:
+        working = working[working["_SubheadName"].isin(offence_matches)]
+        filters.append("Offence: " + ", ".join(offence_matches[:3]))
+
+    if any(phrase in lowered for phrase in ("night", "night-time", "nighttime", "evening", "after dark")):
+        hours = pd.to_datetime(working["IncidentFromDate"], errors="coerce").dt.hour
+        working = working[(hours >= 18) | (hours <= 5)]
+        filters.append("Incident time: 18:00–05:59")
+
+    linked_accused = df_accused[df_accused["CaseMasterID"].isin(working["CaseMasterID"])].copy()
+    repeat_requested = any(term in lowered for term in ("repeat", "repeat offender", "repeat offenders", "recidiv"))
+    suspect_rows = []
+    if repeat_requested and not linked_accused.empty:
+        counts = linked_accused["AccusedName"].value_counts()
+        for name, count in counts[counts > 1].head(5).items():
+            suspect_cases = linked_accused[linked_accused["AccusedName"] == name]["CaseMasterID"].unique()
+            suspect_rows.append({
+                "name": str(name),
+                "caseCount": int(count),
+                "districtCount": int(df_case[df_case["CaseMasterID"].isin(suspect_cases)]["_DistrictID"].nunique()),
+            })
+        filters.append("Entity condition: repeat accused (2+ linked FIRs)")
+
+    working = working.sort_values("CrimeRegisteredDate", ascending=False)
+    case_rows = []
+    for _, row in working.head(12).iterrows():
+        case_rows.append({
+            "id": int(row["CaseMasterID"]),
+            "crimeNo": str(row["CrimeNo"]),
+            "date": str(row["CrimeRegisteredDate"]),
+            "type": str(row["_SubheadName"]),
+            "district": get_district_name(row["_DistrictID"]),
+            "status": get_case_status_name(row["CaseStatusID"]),
+            "facts": str(row["BriefFacts"]),
+        })
+
+    scope = "; ".join(filters) if filters else "No structured filter recognised; showing the most recent FIR records"
+    answer = f"{len(working)} FIR record{'s' if len(working) != 1 else ''} match the stated intelligence query."
+    if suspect_rows:
+        answer += f" {len(suspect_rows)} repeat accused profile{'s' if len(suspect_rows) != 1 else ''} meet the selected scope."
+
+    return {
+        "query": query_text,
+        "answer": answer,
+        "scope": scope,
+        "filters": filters,
+        "cases": case_rows,
+        "suspects": suspect_rows,
+        "recommendedAction": (
+            "Validate the listed FIR narratives and identifiers before issuing operational directions."
+            if case_rows else
+            "No matching records were found. Broaden the offence, district, or time condition."
+        ),
+        "method": "Rule-based interpretation of the supplied question against Catalyst FIR fields; no external data or unstated inference is used.",
+    }
+
+
 @app.get("/api/demo-scenarios")
 def get_demo_scenarios():
     """Return deploy-safe scenarios selected from records that actually exist."""
