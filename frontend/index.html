@@ -98,6 +98,7 @@
           Case Lifecycle
         </a>
         <a href="#" class="nav-link" data-target="forecast"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 19h18v2H3V3h2v13l4-4 3 3 6-7 2 1.7-8 9.3-3-3-4 4v-1z"/></svg>Predictive Analysis Validation</a>
+        <a href="#" class="nav-link" data-target="ai"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm4.4 13.1-2.1-1.2v-2.4l2.1-1.2-1-1.7-2.1 1.2-2.1-1.2-1 1.7 2.1 1.2v2.4l-2.1 1.2 1 1.7 2.1-1.2 2.1 1.2z"/></svg>AI Evidence &amp; Confidence</a>
         <div class="nav-section-label">Deployment</div>
         <a href="#" class="nav-link" data-target="patrol">
           <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M20.5 3 15 5.1 9 3 3.5 4.9A.75.75 0 0 0 3 5.6V21l6-2.1 6 2.1 6-2.1V3.7a.75.75 0 0 0-.5-.7zM10 5.4l4 1.4v11.8l-4-1.4V5.4z"/></svg>
@@ -739,6 +740,12 @@
           <div class="panel-card lab-controls"><select id="forecast-district" class="filter-select"></select><select id="forecast-category" class="filter-select"><option value="">All categories</option><option value="1">Crimes Against Body</option><option value="2">Crimes Against Property</option><option value="3">Crimes Against Women</option><option value="4">Economic Offences</option><option value="6">Cyber Crimes</option><option value="7">Drug Offences</option></select><select id="forecast-months" class="filter-select"><option value="3">3 holdout months</option><option value="6" selected>6 holdout months</option><option value="9">9 holdout months</option><option value="12">12 holdout months</option></select><button id="forecast-run" class="btn btn-primary">Run backtest</button></div>
           <div id="forecast-metrics" class="metric-grid"></div><div class="panel-card"><div class="card-header"><h3>Predicted vs actual historical volume</h3><span id="forecast-method" class="header-muted-label"></span></div><div class="chart-container forecast-chart"><canvas id="forecast-chart"></canvas></div></div><div id="forecast-note" class="analysis-note warning"></div>
         </section>
+
+        <section class="content-panel" id="ai-panel">
+          <div class="lab-hero"><div><span class="eyebrow">EXPLAINABLE INTELLIGENCE</span><h2>AI Evidence &amp; Confidence Centre</h2><p>Review the model, evidence basis, validation signal, and officer verification required before an intelligence-led action.</p></div><div class="method-chip">Human decision required</div></div>
+          <div class="panel-card lab-controls"><select id="ai-district" class="filter-select"></select><button id="ai-refresh" class="btn btn-primary">Refresh AI evidence</button></div>
+          <div id="ai-confidence-summary" class="analysis-note">Load current model evidence and validation signals.</div><div id="ai-confidence-models" class="lab-grid"></div>
+        </section>
         
       </div>
       
@@ -761,6 +768,6 @@
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <!-- Application logic -->
-  <script src="index.js?v=20260723-mlhotspots"></script>
+  <script src="index.js?v=20260723-aiexplain"></script>
 </body>
 </html>

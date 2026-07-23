@@ -57,6 +57,7 @@ const workspaceMeta = {
   patterns:["Crime Analysis","Crime Pattern Analysis"],
   lifecycle:["Crime Analysis","Case Lifecycle Intelligence"],
   forecast:["Crime Analysis","Predictive Analysis Validation"],
+  ai:["Crime Analysis","AI Evidence & Confidence"],
   patrol:["Deployment","Patrol Deployment Planner"],
   quality:["Governance","Data Integrity & Quality"],
   intake:["Investigation","FIR Registration & Evidence Intake"]
@@ -65,7 +66,7 @@ const workspaceMeta = {
 const roleWorkspaces = {
   command: {
     guidance: "Statewide oversight, cross-district approvals, and resource coordination.",
-    allowed: ["home","alerts","drilldown","search","intake","profile","reconstruction","networks","hypotheses","map","patterns","lifecycle","forecast","patrol","quality"],
+    allowed: ["home","alerts","drilldown","search","intake","profile","reconstruction","networks","hypotheses","map","patterns","lifecycle","forecast","ai","patrol","quality"],
     defaultPanel: "home"
   },
   district: {
@@ -85,7 +86,7 @@ const roleWorkspaces = {
   },
   analyst: {
     guidance: "Link entities, analyse evidence, test hypotheses, and produce intelligence support.",
-    allowed: ["home","search","intake","profile","reconstruction","networks","hypotheses","map","patterns","lifecycle","forecast","quality"],
+    allowed: ["home","search","intake","profile","reconstruction","networks","hypotheses","map","patterns","lifecycle","forecast","ai","quality"],
     defaultPanel: "search"
   }
 };
@@ -306,9 +307,9 @@ function populateLabDistricts(geojson, apiDistricts = []) {
   const districts = apiDistricts.length ? apiDistricts : geojson.features.map(feature => ({ id: feature.properties.districtId, name: feature.properties.districtName }))
     .filter(item => item.id && item.name).filter((item, index, all) => all.findIndex(other => other.id === item.id) === index)
     .sort((a, b) => a.name.localeCompare(b.name));
-  ["pattern-district", "lifecycle-district", "patrol-district", "quality-district", "forecast-district"].forEach(id => {
+  ["pattern-district", "lifecycle-district", "patrol-district", "quality-district", "forecast-district", "ai-district"].forEach(id => {
     const select = document.getElementById(id);
-    select.innerHTML = ["patrol-district", "forecast-district"].includes(id) ? '' : '<option value="">All Karnataka</option>';
+    select.innerHTML = ["patrol-district", "forecast-district", "ai-district"].includes(id) ? '' : '<option value="">All Karnataka</option>';
     districts.forEach(district => select.insertAdjacentHTML('beforeend', `<option value="${district.id}">${escapeLab(district.name)}</option>`));
   });
   document.getElementById("patrol-district").value = districts.some(d => d.id === 1) ? "1" : String(districts[0]?.id || "");
@@ -320,6 +321,7 @@ function initAnalyticsLabs() {
   document.getElementById("patrol-run").addEventListener("click", runPatrolPlan);
   document.getElementById("quality-run").addEventListener("click", runQualityAudit);
   document.getElementById("forecast-run").addEventListener("click", runForecastBacktest);
+  document.getElementById("ai-refresh").addEventListener("click", runAIConfidence);
   document.getElementById("hypothesis-form").addEventListener("submit", saveHypothesisBoard);
   loadHypothesisBoards();
 }
@@ -445,6 +447,26 @@ async function runForecastBacktest() {
   } catch(error){document.getElementById("forecast-note").textContent=error.message;}
 }
 
+async function runAIConfidence() {
+  const button = document.getElementById("ai-refresh"); const district = document.getElementById("ai-district").value || "1";
+  const summary = document.getElementById("ai-confidence-summary"); const models = document.getElementById("ai-confidence-models");
+  try {
+    const [patterns, forecast, hotspots] = await Promise.all([
+      fetchLab(`/patterns/discover?districtId=${district}&clusterCount=4`, button),
+      fetch(`${API_BASE}/forecast/backtest?districtId=${district}&holdoutMonths=6`).then(r=>r.json()),
+      fetch(`${API_BASE}/hotspots/forecast?districtId=${district}`).then(r=>r.json())
+    ]);
+    if (forecast.detail) throw new Error(forecast.detail); if (hotspots.detail) throw new Error(hotspots.detail);
+    const cohesion = Math.round(patterns.clusters.reduce((sum, item)=>sum+item.cohesion,0)/patterns.clusters.length);
+    summary.innerHTML = `<strong>AI evidence loaded for ${escapeLab(forecast.district)}.</strong> Every result below is evidence-led and requires officer review before operational action.`;
+    models.innerHTML = [
+      ["Narrative pattern discovery", `${cohesion}% cluster cohesion`, "TF-IDF vectors + MiniBatch K-Means", "FIR narrative text, crime type, district", "Review representative FIRs; clusters are leads, not proof."],
+      ["Crime-volume forecasting", `${forecast.metrics.improvementVsNaive}% vs naive baseline`, forecast.model, forecast.modelDetails.features.join("; "), "Use for planning only; validate against current operational intelligence."],
+      ["Hotspot demand outlook", `${hotspots.zones[0]?.predictedIncidents ?? 0} predicted incidents in top cell`, hotspots.model, "Geocoded FIR volume, recent lags, seasonality", "Deploy only after supervisor review; never treat as certainty of crime."]
+    ].map(item=>`<article class="cluster-card"><div class="cluster-head"><h3>${escapeLab(item[0])}</h3><span class="cluster-score">${escapeLab(item[1])}</span></div><div class="funnel-label">Model: ${escapeLab(item[2])}</div><p style="font-size:11px;color:var(--text-secondary);margin-top:8px"><strong>Evidence:</strong> ${escapeLab(item[3])}</p><div class="quality-flag">Officer check: ${escapeLab(item[4])}</div></article>`).join("");
+  } catch(error) { summary.textContent = error.message; }
+}
+
 function renderForecastChart(series) {
   const context=document.getElementById("forecast-chart").getContext('2d'); if(forecastChart) forecastChart.destroy();
   forecastChart=new Chart(context,{type:'line',data:{labels:series.map(item=>item.month),datasets:[{label:'Actual',data:series.map(item=>item.actual),borderColor:'#58A6FF',backgroundColor:'rgba(88,166,255,.12)',tension:.25},{label:'Predicted',data:series.map(item=>item.predicted),borderColor:'#D29922',borderDash:[6,4],tension:.25}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#C9D1D9'}}},scales:{x:{ticks:{color:'#8B949E'},grid:{color:'#21262D'}},y:{beginAtZero:true,ticks:{color:'#8B949E'},grid:{color:'#21262D'}}}}});
@@ -493,6 +515,7 @@ function initNavigation() {
         else if (target === "patrol") runPatrolPlan();
         else if (target === "quality") runQualityAudit();
         else if (target === "forecast") runForecastBacktest();
+        else if (target === "ai") runAIConfidence();
       }
       
       // Resize/reinitialize maps & graphs on transition to ensure correct dimensions
