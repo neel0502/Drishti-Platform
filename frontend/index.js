@@ -44,21 +44,21 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 const workspaceMeta = {
-  home:["Command","State Command Overview"],
-  alerts:["Command","Situations and Watches"],
-  drilldown:["Command","District Drill-Down"],
-  search:["Investigate","Search and Investigate"],
-  profile:["Investigate","Intelligence Profile"],
-  reconstruction:["Investigate","Incident Reconstruction"],
-  networks:["Investigate","Crime Networks"],
-  hypotheses:["Investigate","Hypothesis Board"],
-  map:["Analyse","State Crime Map"],
-  patterns:["Analyse","Pattern Discovery Lab"],
-  lifecycle:["Analyse","Case Lifecycle Intelligence"],
-  forecast:["Analyse","Forecast Validation"],
-  patrol:["Deploy","Patrol and Resource Planning"],
-  quality:["Govern","Data Quality and Integrity"],
-  intake:["Investigate","Mock FIR and Evidence Intake"]
+  home:["Command & Control","State Command Overview"],
+  alerts:["Command & Control","Situations & Watches"],
+  drilldown:["Command & Control","District Crime Intelligence"],
+  search:["Investigation","Intelligence Search"],
+  profile:["Investigation","Intelligence Profile"],
+  reconstruction:["Investigation","Incident Reconstruction"],
+  networks:["Investigation","Crime Networks"],
+  hypotheses:["Investigation","Investigative Hypotheses"],
+  map:["Crime Analysis","State Crime Map"],
+  patterns:["Crime Analysis","Crime Pattern Analysis"],
+  lifecycle:["Crime Analysis","Case Lifecycle Intelligence"],
+  forecast:["Crime Analysis","Predictive Analysis Validation"],
+  patrol:["Deployment","Patrol Deployment Planner"],
+  quality:["Governance","Data Integrity & Quality"],
+  intake:["Investigation","FIR Registration & Evidence Intake"]
 };
 
 const roleWorkspaces = {
@@ -73,7 +73,7 @@ const roleWorkspaces = {
     defaultPanel: "drilldown"
   },
   station: {
-    guidance: "Register a mock FIR, inspect leads, identify evidence gaps, and request support.",
+    guidance: "Register a development FIR, inspect leads, identify evidence gaps, and request support.",
     allowed: ["home","search","intake","profile","reconstruction","networks","hypotheses","map","lifecycle","quality"],
     defaultPanel: "intake"
   },
@@ -170,7 +170,7 @@ function initMockIntake() {
     const time = source.match(/\b(?:[01]?\d|2[0-3])(?::[0-5]\d)?\s?(?:AM|PM)\b/i)?.[0];
     const location = mockFir?.location || (source.match(/near\s+([^,.]+)/i)?.[1]);
     mockExtraction = { phones, vehicles, time, location, fileName: file?.name || "Pasted sample note" };
-    document.getElementById("mock-evidence-status").textContent = `Mock extraction complete from ${mockExtraction.fileName}. No file was sent outside this browser.`;
+    document.getElementById("mock-evidence-status").textContent = `Sample extraction complete from ${mockExtraction.fileName}. No file was sent outside this browser.`;
     const results = document.getElementById("mock-extraction-results");
     results.classList.remove("empty-state-detail");
     results.innerHTML = `<strong>Extracted investigation leads</strong><div class="extraction-grid"><div><span>Phone identifiers</span><b>${phones.length ? phones.map(escapeLab).join(", ") : "None found"}</b></div><div><span>Vehicle identifiers</span><b>${vehicles.length ? vehicles.map(escapeLab).join(", ") : "None found"}</b></div><div><span>Time clue</span><b>${escapeLab(time || "Not stated")}</b></div><div><span>Location clue</span><b>${escapeLab(location || "Not stated")}</b></div></div><p>API handoff ready: entity extraction, similarity search, and evidence-gap assessment.</p>`;
