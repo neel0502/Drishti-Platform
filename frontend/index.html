@@ -736,6 +736,7 @@
             </form>
           </div>
           <div class="panel-card intake-handoff"><div><span class="eyebrow">NEXT STEP</span><h3>Investigation handoff</h3><p id="mock-handoff-copy">Register a development FIR and extract a lead to generate a traceable investigation handoff.</p></div><div class="intake-actions"><button id="mock-open-search" class="btn btn-secondary" type="button" disabled>Search linked intelligence</button><button id="mock-open-reconstruction" class="btn btn-primary" type="button" disabled>Open reconstruction workspace</button></div></div>
+          <div class="panel-card" id="synthetic-scenario-generator"><div class="card-header"><h3>Synthetic Scenario Generator</h3><span class="status-pill amber-pill">DEMO SANDBOX ONLY</span></div><p class="mo-paragraph">Generate schema-compatible test FIRs for a repeatable judge demonstration. These records remain in memory and are never written to Catalyst Data Store.</p><div class="lab-controls"><select id="synthetic-scenario-type" class="filter-select"><option value="night_burglary">Night burglary series</option><option value="chain_snatching">Chain-snatching corridor</option><option value="cyber_fraud">Cyber-fraud cluster</option><option value="evidence_gap">Missing-evidence review</option></select><label class="unit-label">FIRs <input id="synthetic-case-count" class="lab-input short" type="number" min="2" max="10" value="4"></label><button id="synthetic-generate" class="btn btn-primary" type="button">Generate demo scenario</button></div><div id="synthetic-scenario-result" class="empty-state-detail">Choose a scenario to create clearly labelled test FIRs and a live demo test plan.</div></div>
         </section>
 
         <section class="content-panel" id="hypotheses-panel">
@@ -776,6 +777,6 @@
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <!-- Application logic -->
-  <script src="index.js?v=20260724-semanticsearch"></script>
+  <script src="index.js?v=20260724-syntheticgenerator"></script>
 </body>
 </html>

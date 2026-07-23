@@ -1348,6 +1348,72 @@ class FIRClassificationRequest(BaseModel):
     narrative: str
 
 
+class SyntheticScenarioRequest(BaseModel):
+    scenario: str = "night_burglary"
+    caseCount: int = 4
+
+
+@app.post("/api/synthetic-scenarios/generate")
+def generate_synthetic_scenario(request: SyntheticScenarioRequest):
+    """Create schema-compatible, in-memory demo records; never writes police data."""
+    templates = {
+        "night_burglary": {
+            "title": "Operation Night Watch",
+            "offence": "House Burglary",
+            "districts": ["Bengaluru Urban", "Mysuru", "Belagavi"],
+            "narrative": "SYNTHETIC DEMO: Unknown persons entered a locked residence at night using a drill on the front-door lock. Gold ornaments and cash reported stolen. Witness observed a dark motorcycle nearby.",
+            "vehicle": "SYN-KA-05-DEMO", "phone": "90000-00001",
+            "test": "Run semantic MO search, cross-case link prediction, reconstruction, and missing CCTV/ANPR evidence checks.",
+        },
+        "chain_snatching": {
+            "title": "Metro Corridor Chain Snatching",
+            "offence": "Chain Snatching",
+            "districts": ["Bengaluru Urban", "Bengaluru Urban", "Mysuru"],
+            "narrative": "SYNTHETIC DEMO: Two riders on a motorcycle targeted a lone pedestrian near a transport corridor in the evening and snatched a gold chain before leaving the area.",
+            "vehicle": "SYN-KA-05-DEMO", "phone": "90000-00002",
+            "test": "Run MO similarity, map hotspot view, linked-vehicle investigation, and patrol planning scenario.",
+        },
+        "cyber_fraud": {
+            "title": "Festival Phishing Fraud Cluster",
+            "offence": "Cyber Fraud",
+            "districts": ["Mysuru", "Dharwad", "Bengaluru Urban"],
+            "narrative": "SYNTHETIC DEMO: Victim received a fraudulent service-payment message and disclosed a one-time password. Funds were transferred through an unknown digital channel.",
+            "vehicle": "Not applicable", "phone": "90000-00003",
+            "test": "Run narrative classification, semantic search, anomaly watch, and evidence-gap review.",
+        },
+        "evidence_gap": {
+            "title": "Incomplete Evidence Review Queue",
+            "offence": "Robbery",
+            "districts": ["Belagavi", "Dharwad", "Mysuru"],
+            "narrative": "SYNTHETIC DEMO: Robbery reported near a commercial area. Witness account is available, but CCTV reference, vehicle number, and suspect identity are not yet recorded.",
+            "vehicle": "Not recorded", "phone": "Not recorded",
+            "test": "Open reconstruction to demonstrate explicit missing-evidence links and the supervisory review workflow.",
+        },
+    }
+    template = templates.get(request.scenario)
+    if not template:
+        raise HTTPException(status_code=422, detail="Choose a supported synthetic scenario")
+    count = max(2, min(int(request.caseCount), 10))
+    base_date = datetime(2024, 11, 18, 20, 0, tzinfo=timezone.utc)
+    cases = []
+    for index in range(count):
+        district = template['districts'][index % len(template['districts'])]
+        timestamp = base_date + timedelta(days=index * 3, hours=index % 3)
+        cases.append({
+            "caseId": f"SYN-{request.scenario.upper()}-{index + 1:02d}",
+            "crimeNo": f"SYN-2024-{index + 1:04d}", "district": district,
+            "offence": template['offence'], "incidentTime": timestamp.isoformat(),
+            "narrative": template['narrative'], "vehicle": template['vehicle'], "phone": template['phone'],
+            "status": "Synthetic demo record",
+        })
+    return {
+        "synthetic": True, "title": template['title'], "cases": cases,
+        "schemaTables": ["CaseMaster", "Accused", "Victim", "ComplainantDetails", "ArrestSurrender", "ChargesheetDetails"],
+        "testPlan": template['test'],
+        "notice": "Synthetic test data only. It is generated in memory for the demo sandbox, is not written to Catalyst Data Store, and must never be represented as Karnataka Police data.",
+    }
+
+
 def build_offence_classifier():
     """Train a transparent narrative-to-offence classifier from labelled FIRs."""
     global offence_classifier, offence_classifier_labels

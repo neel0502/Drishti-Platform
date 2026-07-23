@@ -121,6 +121,8 @@ function initMockIntake() {
   const offenceSelect = document.getElementById("mock-offence");
   const classifyButton = document.getElementById("mock-classify-fir");
   const classificationResult = document.getElementById("mock-classification-result");
+  const syntheticButton = document.getElementById("synthetic-generate");
+  const syntheticResult = document.getElementById("synthetic-scenario-result");
   const now = new Date();
   now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
   document.getElementById("mock-incident-time").value = now.toISOString().slice(0, 16);
@@ -152,6 +154,16 @@ function initMockIntake() {
       if (matchingOption) offenceSelect.value = matchingOption.value;
       classificationResult.innerHTML = `<strong>AI suggestion:</strong> ${escapeLab(best.offence)} (${best.confidence}%). Alternatives: ${result.suggestions.slice(1).map(item => `${escapeLab(item.offence)} ${item.confidence}%`).join(" · ")}. <span style="color:var(--alert-amber)">Officer must confirm the official offence classification.</span>`;
     } catch (error) { classificationResult.textContent = error.message; }
+  });
+
+  syntheticButton.addEventListener("click", async () => {
+    syntheticResult.textContent = "Generating schema-compatible synthetic demo FIRs…";
+    try {
+      const response = await fetch(`${API_BASE}/synthetic-scenarios/generate`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({scenario:document.getElementById("synthetic-scenario-type").value, caseCount:Number(document.getElementById("synthetic-case-count").value)})});
+      const data = await response.json(); if (!response.ok) throw new Error(data.detail || "Scenario generation unavailable");
+      syntheticResult.classList.remove("empty-state-detail");
+      syntheticResult.innerHTML = `<div class="demo-safety-note"><strong>SYNTHETIC TEST DATA.</strong> ${escapeLab(data.notice)}</div><h3 style="margin-top:12px">${escapeLab(data.title)}</h3><p>${escapeLab(data.testPlan)}</p><div class="details-list">${data.cases.map(item => `<div class="details-item"><span class="details-label">${escapeLab(item.crimeNo)} · ${escapeLab(item.district)}</span><span class="details-value">${escapeLab(item.offence)} · ${escapeLab(item.vehicle)} · ${escapeLab(item.phone)}</span></div>`).join("")}</div><p class="header-muted-label">Schema coverage: ${data.schemaTables.map(escapeLab).join(" · ")}</p>`;
+    } catch (error) { syntheticResult.textContent = error.message; }
   });
 
   firForm.addEventListener("submit", async event => {
