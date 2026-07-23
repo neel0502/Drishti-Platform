@@ -1584,6 +1584,51 @@ def get_incident_reconstruction(case_id: int):
     return build_incident_reconstruction(case_id)
 
 
+@app.get("/api/cases/{case_id}/ai-brief")
+def get_case_ai_brief(case_id: int):
+    """Create an extractive, source-linked officer briefing for one FIR."""
+    rows = df_case[df_case['CaseMasterID'] == int(case_id)]
+    if rows.empty:
+        raise HTTPException(status_code=404, detail="Case not found")
+    case = rows.iloc[0]
+    narrative = str(case.get('BriefFacts') or '').strip()
+    sentences = [item.strip() for item in re.split(r'(?<=[.!?])\s+', narrative) if item.strip()]
+    if tfidf_matrix is None:
+        build_nlp_index()
+    if sentences:
+        sentence_vectors = vectorizer.transform(sentences)
+        ranked = sorted(range(len(sentences)), key=lambda index: float(sentence_vectors[index].sum()), reverse=True)
+        summary = ' '.join(sentences[index] for index in sorted(ranked[:2]))
+    else:
+        summary = 'No recorded FIR narrative is available for NLP briefing.'
+    narrative_vector = vectorizer.transform([narrative])
+    term_scores = narrative_vector.toarray()[0]
+    top_indices = np.argsort(term_scores)[::-1]
+    keywords = [vectorizer.get_feature_names_out()[index] for index in top_indices if term_scores[index] > 0][:6]
+    accused = df_accused[df_accused['CaseMasterID'] == int(case_id)]['AccusedName'].dropna().unique().tolist()
+    victims = df_victim[df_victim['CaseMasterID'] == int(case_id)]['VictimName'].dropna().unique().tolist()
+    entities = []
+    def add_entity(kind, value, confidence, source):
+        if value and str(value).strip():
+            entities.append({'type': kind, 'value': str(value).strip(), 'confidence': confidence, 'source': source})
+    for value in accused[:5]: add_entity('Accused record', value, 99, 'Accused.AccusedName')
+    for value in victims[:5]: add_entity('Victim record', value, 99, 'Victim.VictimName')
+    add_entity('Phone identifier', clean_val(case.get('phone')), 98, 'CaseMaster narrative identifier')
+    add_entity('Vehicle identifier', clean_val(case.get('vehicle')), 98, 'CaseMaster narrative identifier')
+    for match in re.findall(r'\b(?:\+91[- ]?)?[6-9]\d{4}[- ]?\d{5}\b', narrative):
+        if not any(entity['value'] == match for entity in entities): add_entity('Phone identifier', match, 90, 'Matched in FIR narrative')
+    for match in re.findall(r'\b[A-Z]{2}[- ]?\d{2}[- ]?[A-Z]{1,3}[- ]?\d{3,4}\b', narrative.upper()):
+        if not any(entity['value'].upper() == match.upper() for entity in entities): add_entity('Vehicle identifier', match, 90, 'Matched in FIR narrative')
+    add_entity('Incident time', pd.to_datetime(case['IncidentFromDate']).strftime('%d %b %Y %H:%M'), 99, 'CaseMaster.IncidentFromDate')
+    add_entity('Recorded location', f"{float(case['latitude']):.5f}, {float(case['longitude']):.5f}", 99, 'CaseMaster latitude/longitude')
+    return {
+        'caseId': int(case_id), 'crimeNo': str(case['CrimeNo']), 'summary': summary,
+        'keywords': keywords, 'entities': entities,
+        'method': 'TF-IDF extractive FIR briefing with schema-linked and regex-verified entity extraction.',
+        'caveat': 'The summary only condenses recorded FIR text. Extracted entities require officer verification against the source FIR and supporting evidence.',
+    }
+
+
 class OperationalActionRequest(BaseModel):
     caseId: int
     actionType: str

@@ -1326,12 +1326,14 @@ async function loadIncidentReconstruction(caseId) {
   try {
     labLoaded.add("reconstruction");
     reconstructionData = await fetchJson(`/cases/${encodeURIComponent(caseId)}/reconstruction`);
+    const aiBrief = await fetchJson(`/cases/${encodeURIComponent(caseId)}/ai-brief`);
     const pdfButton = document.getElementById("btn-case-pdf");
     pdfButton.href = `${API_BASE}/cases/${encodeURIComponent(caseId)}/brief.pdf`;
     pdfButton.classList.remove("disabled-link");
     pdfButton.removeAttribute("aria-disabled");
     if (activePanel !== "reconstruction") triggerNav("reconstruction");
     renderReconstructionSummary();
+    renderAIFIRBrief(aiBrief);
     window.setTimeout(() => {
       initializeReconstructionMap();
       renderReconstructionStep(0);
@@ -1347,6 +1349,11 @@ async function loadIncidentReconstruction(caseId) {
     document.getElementById("reconstruction-title").textContent = "Unable to load reconstruction";
     document.getElementById("reconstruction-summary").textContent = error.message;
   }
+}
+
+function renderAIFIRBrief(brief) {
+  const container = document.getElementById("ai-fir-brief");
+  container.innerHTML = `<p class="mo-paragraph">${escapeLab(brief.summary)}</p><div class="term-row">${brief.keywords.map(keyword => `<span class="term-pill">${escapeLab(keyword)}</span>`).join('') || '<span class="term-pill">No keywords available</span>'}</div><div class="details-list" style="margin-top:14px;">${brief.entities.map(entity => `<div class="details-item"><span class="details-label">${escapeLab(entity.type)} · ${entity.confidence}%</span><span class="details-value">${escapeLab(entity.value)}<small style="display:block;color:var(--text-muted)">${escapeLab(entity.source)}</small></span></div>`).join('') || '<div class="details-item"><span class="details-value">No extractable entities found.</span></div>'}</div><div class="human-review-note" style="margin-top:12px;">${escapeLab(brief.caveat)}</div>`;
 }
 
 function initializeReconstructionMap() {
