@@ -969,7 +969,8 @@ def command_query(q: str = Query(..., min_length=4)):
     for _, district in df_district.iterrows():
         district_name = str(district["DistrictName"])
         tokens = [token for token in re.findall(r"[a-z]{4,}", district_name.lower())]
-        if district_name.lower() in lowered or (tokens and all(token in lowered for token in tokens)):
+        bengaluru_alias = district_name == "Bangalore Urban" and "bengaluru" in lowered
+        if district_name.lower() in lowered or bengaluru_alias or (tokens and all(token in lowered for token in tokens)):
             district_matches.append((int(district["DistrictID"]), district_name))
     if district_matches:
         district_ids = [item[0] for item in district_matches]
