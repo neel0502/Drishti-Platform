@@ -356,7 +356,11 @@ async function loadDemoScenarios() {
 }
 
 function runDemoScenario(scenario) {
-  if (scenario.action === "reconstruct" && scenario.caseId) {
+  if (scenario.action === "command") {
+    const input = document.getElementById("command-query-input");
+    input.value = scenario.query;
+    document.getElementById("command-query-form").requestSubmit();
+  } else if (scenario.action === "reconstruct" && scenario.caseId) {
     loadIncidentReconstruction(scenario.caseId);
   } else if (scenario.action === "links" && scenario.caseId) {
     loadCaseMO(scenario.caseId);

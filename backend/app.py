@@ -1092,6 +1092,13 @@ def get_demo_scenarios():
     """Return deploy-safe scenarios selected from records that actually exist."""
     scenarios = []
 
+    scenarios.append({
+        "label": "Operation Night Watch",
+        "description": "Run the bilingual ML-led burglary investigation: repeat accused, night pattern, and Bengaluru FIR evidence.",
+        "query": "Show repeat burglary accused in Bengaluru at night",
+        "action": "command",
+    })
+
     def add_case_scenario(label, description, cases, action="search"):
         if cases.empty:
             return
@@ -1152,7 +1159,7 @@ def get_demo_scenarios():
     )
 
     return {
-        "scenarios": scenarios[:6],
+        "scenarios": scenarios[:7],
         "notice": "Synthetic demonstration records. Validate every inference against source evidence.",
     }
 
