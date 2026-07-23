@@ -9,7 +9,7 @@ import networkx as nx
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.cluster import MiniBatchKMeans
-from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+from sklearn.ensemble import IsolationForest, RandomForestRegressor, RandomForestClassifier
 import re
 import os
 import json
@@ -644,6 +644,73 @@ def compute_monthly_anomalies(limit=5):
         })
 
     anomalies.sort(key=lambda item: (item['zScore'], item['ratio']), reverse=True)
+    return anomalies[:limit]
+
+
+def compute_ml_monthly_anomalies(limit=5):
+    """Identify unusual current FIR-volume patterns with an unsupervised model.
+
+    One Isolation Forest is trained per district/offence time series.  It learns
+    the normal relationship between monthly volume, its recent lags, rolling
+    average, and seasonality, then scores the most recent complete month.
+    """
+    latest_period, _ = get_complete_analysis_periods()
+    working = df_case.copy()
+    working['_period'] = pd.to_datetime(working['CrimeRegisteredDate']).dt.to_period('M')
+    period_range = pd.period_range(latest_period - 24, latest_period, freq='M')
+    anomalies = []
+
+    for (district_id, crime_type), series in working.groupby(['_DistrictID', '_SubheadName', '_period']).size().groupby(level=[0, 1]):
+        monthly = series.droplevel([0, 1]).reindex(period_range, fill_value=0).astype(float)
+        if monthly.nunique() < 3 or monthly.iloc[-1] < 4:
+            continue
+        frame = pd.DataFrame({'count': monthly})
+        frame['lag1'] = frame['count'].shift(1)
+        frame['rolling3'] = frame['count'].shift(1).rolling(3, min_periods=3).mean()
+        frame['month_sin'] = np.sin(2 * np.pi * np.array([period.month for period in frame.index]) / 12)
+        frame['month_cos'] = np.cos(2 * np.pi * np.array([period.month for period in frame.index]) / 12)
+        frame = frame.dropna()
+        if len(frame) < 16:
+            continue
+
+        features = frame[['count', 'lag1', 'rolling3', 'month_sin', 'month_cos']]
+        model = IsolationForest(n_estimators=160, contamination=0.12, random_state=42)
+        model.fit(features)
+        current_features = features.iloc[[-1]]
+        decision = float(model.decision_function(current_features)[0])
+        predicted_label = int(model.predict(current_features)[0])
+        current_count = int(frame['count'].iloc[-1])
+        baseline = monthly.iloc[-13:-1]
+        baseline_mean = float(baseline.mean())
+        ratio = current_count / baseline_mean if baseline_mean else 0
+
+        # A negative Isolation Forest decision is anomalous. Keep material rises
+        # only, avoiding low-volume data artefacts from incomplete reporting.
+        if predicted_label != -1 or ratio < 1.35:
+            continue
+        matching = working[
+            (working['_DistrictID'] == district_id)
+            & (working['_SubheadName'] == crime_type)
+            & (working['_period'] == latest_period)
+        ].sort_values('CrimeRegisteredDate', ascending=False).head(3)
+        anomalies.append({
+            'districtId': int(district_id),
+            'district': get_district_name(district_id),
+            'crimeType': str(crime_type),
+            'period': str(latest_period),
+            'count': current_count,
+            'baselineMean': round(baseline_mean, 1),
+            'ratio': round(ratio, 2),
+            'anomalyScore': round(max(0, -decision) * 100, 1),
+            'model': 'Isolation Forest monthly-volume anomaly model',
+            'features': 'FIR volume, 1-month lag, 3-month rolling mean, month-of-year seasonality',
+            'cases': [{
+                'id': int(row['CaseMasterID']), 'crimeNo': str(row['CrimeNo']),
+                'date': str(row['CrimeRegisteredDate']), 'facts': str(row['BriefFacts']),
+                'lat': float(row['latitude']), 'lng': float(row['longitude']),
+            } for _, row in matching.iterrows()],
+        })
+    anomalies.sort(key=lambda item: (item['anomalyScore'], item['ratio']), reverse=True)
     return anomalies[:limit]
 
 @app.on_event("startup")
@@ -1969,8 +2036,8 @@ def get_crime_networks(groupName: str = None):
 @app.get("/api/alerts")
 def get_situations():
     alerts = []
-    for index, anomaly in enumerate(compute_monthly_anomalies(limit=5)):
-        severity = "urgent" if anomaly['zScore'] >= 3 else "watch"
+    for index, anomaly in enumerate(compute_ml_monthly_anomalies(limit=5)):
+        severity = "urgent" if anomaly['anomalyScore'] >= 8 else "watch"
         increase_percent = round((anomaly['ratio'] - 1) * 100)
         evidence = [
             {
@@ -1982,23 +2049,27 @@ def get_situations():
                 "value": f"{anomaly['baselineMean']} cases/month",
             },
             {
-                "label": "Statistical deviation",
-                "value": f"{anomaly['zScore']} standard deviations above baseline",
+                "label": "ML anomaly confidence signal",
+                "value": f"Isolation Forest anomaly score {anomaly['anomalyScore']}/100",
+            },
+            {
+                "label": "Model inputs",
+                "value": anomaly['features'],
             },
         ]
         alerts.append({
             "id": f"computed-spike-{index}",
             "severity": severity,
             "title": f"{anomaly['crimeType']} spike — {anomaly['district']}",
-            "timeText": f"Computed from {anomaly['period']} records",
+            "timeText": f"ML-detected from {anomaly['period']} FIR records",
             "description": (
                 f"{anomaly['count']} cases, {increase_percent}% above the preceding "
                 f"12-month baseline of {anomaly['baselineMean']}."
             ),
             "whatHappened": (
-                f"Drishti compared {anomaly['district']} {anomaly['crimeType']} volume "
-                f"for {anomaly['period']} against the previous 12 complete months. "
-                f"The observed volume is {anomaly['ratio']}× the baseline."
+                f"The Isolation Forest model marked {anomaly['district']} {anomaly['crimeType']} "
+                f"volume for {anomaly['period']} as unusual after comparing FIR volume, recent "
+                f"trend, and seasonality. The observed volume is {anomaly['ratio']}× the prior 12-month baseline."
             ),
             "cases": anomaly['cases'],
             "evidence": evidence,
@@ -2061,7 +2132,7 @@ def get_situations():
 
     return {
         "alerts": alerts,
-        "method": "12-month district/category z-score baseline; validation watches are labelled",
+        "method": "Isolation Forest monthly-volume anomaly detection; validation watches are labelled",
     }
 
 @app.get("/api/districts/{district_id}")
