@@ -488,6 +488,32 @@ def get_case_links(case_id, top_n=8):
             features = [[candidate['similarity'], int(source['_SubheadName'] == candidate_row['_SubheadName']), int(source['_DistrictID'] == candidate_row['_DistrictID']), max(0, 1 - distance_km / 50), max(0, 1 - hour_difference / 12)]]
             ml_confidence = round(float(link_prediction_model.predict_proba(features)[0][1]) * 100, 1)
 
+        # Keep the ML result explainable for the investigating officer.  These are
+        # the same input signals used by the FIR-pair classifier, not a second
+        # opaque score.
+        similarity_signals = [
+            {
+                "label": "FIR narrative / MO",
+                "value": f"{candidate['similarity'] * 100:.1f}% similarity",
+                "score": round(candidate['similarity'] * 100, 1),
+            },
+            {
+                "label": "Offence classification",
+                "value": "Same offence type" if source['_SubheadName'] == candidate_row['_SubheadName'] else "Different offence type",
+                "score": 100 if source['_SubheadName'] == candidate_row['_SubheadName'] else 0,
+            },
+            {
+                "label": "Geographic proximity",
+                "value": f"{distance_km:.1f} km between incidents",
+                "score": round(max(0, 1 - distance_km / 50) * 100, 1),
+            },
+            {
+                "label": "Time-of-day pattern",
+                "value": f"{hour_difference} hour(s) apart",
+                "score": round(max(0, 1 - hour_difference / 12) * 100, 1),
+            },
+        ]
+
         evidence = [
             {
                 "type": "MO narrative",
@@ -539,13 +565,15 @@ def get_case_links(case_id, top_n=8):
             "crimeType": str(candidate_row['_SubheadName']),
             "connectionScore": connection_score,
             "mlConfidence": ml_confidence,
+            "similarityConfidence": ml_confidence,
+            "similaritySignals": similarity_signals,
             "evidence": evidence,
             "missingSignals": missing_signals,
             "distanceKm": round(distance_km, 1),
             "hourDifference": hour_difference,
         })
 
-    links.sort(key=lambda item: (item['connectionScore'], item['similarity']), reverse=True)
+    links.sort(key=lambda item: (item['similarityConfidence'] or 0, item['connectionScore'], item['similarity']), reverse=True)
     links = links[:top_n]
     return {
         "sourceCase": {
@@ -558,9 +586,10 @@ def get_case_links(case_id, top_n=8):
         },
         "relatedCases": links,
         "method": {
-            "name": "Explainable Case Linker",
+            "name": "Explainable ML Case Similarity",
             "threshold": "TF-IDF cosine similarity >= 35%",
-            "scoring": "50% narrative + 20% co-accused + 15% identifiers + 10% proximity + 5% time pattern",
+            "model": "Random Forest FIR-pair classifier",
+            "scoring": "Narrative / MO, offence classification, geographic proximity, time-of-day pattern, and known cross-case links. Results are investigative leads, not proof.",
         },
     }
 

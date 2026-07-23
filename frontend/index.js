@@ -1285,13 +1285,13 @@ async function loadCaseMO(caseId) {
       id: `case-links-${source.caseId}`,
       severity: bestScore >= 80 ? "urgent" : "watch",
       title: `${related.length} explainable links for FIR ${source.crimeNo}`,
-      timeText: "Computed on demand · Explainable Case Linker",
-      description: `${related.length} related cases across ${districts.length} district(s); strongest connection score ${bestScore}/100.`,
-      whatHappened: `Drishti compared the FIR narrative and relational records against 50,460 indexed cases. Results are ranked using narrative similarity, shared accused, and shared identifiers.`,
+      timeText: "Computed on demand · Explainable ML Case Similarity",
+      description: `${related.length} related cases across ${districts.length} district(s); strongest evidence connection score ${bestScore}/100.`,
+      whatHappened: `Drishti compared the FIR narrative and relational records against 50,460 indexed cases. ML similarity confidence is ranked using FIR narrative / MO, offence type, location, time-of-day, and known cross-case links. It is an investigative lead, not proof.`,
       cases: related,
       evidence: related.slice(0, 5).map(item => ({
-        label: `${item.crimeNo} · ${item.district}`,
-        value: `${item.connectionScore}/100 · ML link confidence ${item.mlConfidence ?? '—'}% — ${item.evidence.map(e => e.value).join("; ")}`
+        label: `${item.crimeNo} · ${item.district} · ML similarity confidence ${item.similarityConfidence ?? item.mlConfidence ?? '—'}%`,
+        value: `${item.similaritySignals?.map(signal => `${signal.label}: ${signal.value}`).join(" · ") || item.evidence.map(e => e.value).join("; ")} · Evidence connection ${item.connectionScore}/100`
       })),
       recommendedAction: "Suggested response: Review the evidence for the highest-scoring links and validate the associated FIRs before merging or coordinating investigations."
     };
