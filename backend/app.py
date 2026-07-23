@@ -996,7 +996,15 @@ def command_query(q: str = Query(..., min_length=4)):
     used instead of presenting a black-box conclusion as intelligence.
     """
     query_text = q.strip()
-    lowered = query_text.lower()
+    kannada_terms = {
+        "ಬೆಂಗಳೂರು": "bengaluru", "ಮೈಸೂರು": "mysuru", "ರಾತ್ರಿ": "night",
+        "ಕಳ್ಳತನ": "burglary", "ದರೋಡೆ": "robbery", "ಕಳ್ಳ": "theft",
+        "ಪುನರಾವರ್ತಿತ": "repeat", "ಆರೋಪಿ": "accused", "ಪ್ರಕರಣ": "cases",
+    }
+    interpreted_query = query_text
+    for kannada, english in kannada_terms.items():
+        interpreted_query = interpreted_query.replace(kannada, english)
+    lowered = interpreted_query.lower()
     working = df_case.copy()
     filters = []
 
@@ -1063,6 +1071,8 @@ def command_query(q: str = Query(..., min_length=4)):
 
     return {
         "query": query_text,
+        "interpretedQuery": interpreted_query,
+        "languageMode": "Kannada-assisted" if interpreted_query != query_text else "English",
         "answer": answer,
         "scope": scope,
         "filters": filters,

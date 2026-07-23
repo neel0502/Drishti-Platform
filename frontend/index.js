@@ -1086,7 +1086,7 @@ function initCommandQueryAssistant() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Command query unavailable");
       const suspects = (data.suspects || []).map(person => `<span>${escapeLab(person.name)} · ${person.caseCount} FIRs · ${person.districtCount} districts</span>`).join("");
-      result.innerHTML = `<strong>${escapeLab(data.answer)}</strong><div>${escapeLab(data.scope)}</div>${suspects ? `<div class="command-query-suspects">${suspects}</div>` : ""}<div class="command-query-meta">Recommended action: ${escapeLab(data.recommendedAction)}<br>${escapeLab(data.method)}</div>`;
+      result.innerHTML = `<strong>${escapeLab(data.answer)}</strong><div>${escapeLab(data.scope)}</div>${data.languageMode === "Kannada-assisted" ? `<div class="command-query-meta">Kannada query interpreted as: ${escapeLab(data.interpretedQuery)}</div>` : ""}${suspects ? `<div class="command-query-suspects">${suspects}</div>` : ""}<div class="command-query-meta">Recommended action: ${escapeLab(data.recommendedAction)}<br>${escapeLab(data.method)}</div>`;
       renderSearchResults({ people: [], phones: [], vehicles: [], cases: data.cases || [] });
       document.getElementById("search-guidance").textContent = "Command query results are shown below. Review the stated filters before acting on any intelligence.";
     } catch (error) {

@@ -316,9 +316,9 @@
             <h2>Search FIRs and linked entities</h2>
             <p class="hero-sub">Search by accused name, FIR number, phone, vehicle, offence, location clue, or words from the complaint narrative.</p>
             <form id="command-query-form" class="command-query-form">
-              <label for="command-query-input">Command Query Assistant <span>Traceable FIR intelligence</span></label>
+              <label for="command-query-input">Bilingual Command Query Assistant <span>English + Kannada · traceable FIR intelligence</span></label>
               <div class="command-query-row"><input id="command-query-input" class="lab-input" placeholder="e.g. Show repeat burglary accused in Bengaluru at night" autocomplete="off"><button class="btn btn-primary" type="submit">Analyse query</button></div>
-              <div class="command-query-chips"><button type="button" data-command-query="Show repeat burglary accused in Bengaluru at night">Repeat burglary accused</button><button type="button" data-command-query="Show robbery cases in Mysuru">Robbery cases in Mysuru</button><button type="button" data-command-query="Show night-time theft cases">Night-time theft pattern</button></div>
+              <div class="command-query-chips"><button type="button" data-command-query="Show repeat burglary accused in Bengaluru at night">Repeat burglary accused</button><button type="button" data-command-query="Show robbery cases in Mysuru">Robbery cases in Mysuru</button><button type="button" data-command-query="ಬೆಂಗಳೂರು ರಾತ್ರಿ ಕಳ್ಳತನ ಪುನರಾವರ್ತಿತ ಆರೋಪಿ ಪ್ರಕರಣ">Kannada burglary query</button></div>
             </form>
             <div id="command-query-result" class="command-query-result" hidden></div>
             <div class="demo-scenario-header"><strong>Validated demo scenarios</strong><span>Synthetic records · click any card to run</span></div>
@@ -768,6 +768,6 @@
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <!-- Application logic -->
-  <script src="index.js?v=20260723-aiexplain"></script>
+  <script src="index.js?v=20260723-bilingualquery"></script>
 </body>
 </html>
