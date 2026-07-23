@@ -119,6 +119,8 @@ function initMockIntake() {
   const stationSelect = document.getElementById("mock-station");
   const officerSelect = document.getElementById("mock-officer");
   const offenceSelect = document.getElementById("mock-offence");
+  const classifyButton = document.getElementById("mock-classify-fir");
+  const classificationResult = document.getElementById("mock-classification-result");
   const now = new Date();
   now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
   document.getElementById("mock-incident-time").value = now.toISOString().slice(0, 16);
@@ -136,6 +138,20 @@ function initMockIntake() {
     populateOfficers();
   }).catch(error => {
     document.getElementById("mock-fir-status").textContent = `Schema choices unavailable: ${error.message}`;
+  });
+
+  classifyButton.addEventListener("click", async () => {
+    const narrative = document.getElementById("mock-narrative").value.trim();
+    classificationResult.textContent = "Analysing FIR narrative against historic KSP offence labels…";
+    try {
+      const response = await fetch(`${API_BASE}/fir-classification`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({narrative}) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "Classification unavailable");
+      const best = result.suggestions[0];
+      const matchingOption = [...offenceSelect.options].find(option => option.text.trim().toLowerCase() === best.offence.toLowerCase());
+      if (matchingOption) offenceSelect.value = matchingOption.value;
+      classificationResult.innerHTML = `<strong>AI suggestion:</strong> ${escapeLab(best.offence)} (${best.confidence}%). Alternatives: ${result.suggestions.slice(1).map(item => `${escapeLab(item.offence)} ${item.confidence}%`).join(" · ")}. <span style="color:var(--alert-amber)">Officer must confirm the official offence classification.</span>`;
+    } catch (error) { classificationResult.textContent = error.message; }
   });
 
   firForm.addEventListener("submit", async event => {

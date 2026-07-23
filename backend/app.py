@@ -10,6 +10,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.cluster import MiniBatchKMeans
 from sklearn.ensemble import IsolationForest, RandomForestRegressor, RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
 import re
 import os
 import json
@@ -67,6 +68,8 @@ case_ids_list = []
 G = nx.Graph()
 link_prediction_model = None
 link_prediction_features = []
+offence_classifier = None
+offence_classifier_labels = []
 analytics_ready = Event()
 analytics_initialization_lock = Lock()
 analytics_error = None
@@ -1314,6 +1317,48 @@ class FIRCreateRequest(BaseModel):
     latitude: float
     longitude: float
     briefFacts: str
+
+
+class FIRClassificationRequest(BaseModel):
+    narrative: str
+
+
+def build_offence_classifier():
+    """Train a transparent narrative-to-offence classifier from labelled FIRs."""
+    global offence_classifier, offence_classifier_labels
+    if tfidf_matrix is None:
+        build_nlp_index()
+    labels = df_case.set_index('CaseMasterID').loc[case_ids_list, '_SubheadName'].fillna('').astype(str)
+    eligible = labels.value_counts()
+    eligible = eligible[eligible >= 25].index
+    mask = labels.isin(eligible)
+    indices = np.flatnonzero(mask.to_numpy())
+    if len(indices) > 12000:
+        indices = np.random.default_rng(42).choice(indices, size=12000, replace=False)
+    offence_classifier = LogisticRegression(max_iter=250, class_weight='balanced', multi_class='auto', n_jobs=1)
+    offence_classifier.fit(tfidf_matrix[indices], labels.iloc[indices])
+    offence_classifier_labels = offence_classifier.classes_.tolist()
+
+
+@app.post("/api/fir-classification")
+def classify_fir_narrative(request: FIRClassificationRequest):
+    narrative = request.narrative.strip()
+    if len(narrative) < 20:
+        raise HTTPException(status_code=422, detail="Enter at least 20 characters of FIR narrative for a classification suggestion")
+    if offence_classifier is None:
+        build_offence_classifier()
+    probabilities = offence_classifier.predict_proba(vectorizer.transform([narrative]))[0]
+    top = np.argsort(probabilities)[::-1][:3]
+    suggestions = [{
+        'offence': str(offence_classifier.classes_[index]),
+        'confidence': round(float(probabilities[index]) * 100, 1),
+    } for index in top]
+    return {
+        'suggestions': suggestions,
+        'model': 'TF-IDF FIR narrative vectors + multinomial Logistic Regression',
+        'training': f'Trained on {len(offence_classifier_labels)} official offence labels represented in historic FIRs.',
+        'caveat': 'Classification assistance only. The officer must confirm the statutory/offence classification from the FIR facts and applicable law.',
+    }
 
 
 @app.get("/api/fir-intake-options")
