@@ -1,7 +1,9 @@
 // DRISHTI APPLICATION CONTROLLER - FRONTEND
 
 // Use the backend served by the same host in local and Catalyst deployments.
-const API_BASE = "/api";
+const API_BASE = window.location.protocol === "file:"
+  ? "https://drishtiksp-50044068191.development.catalystappsail.in/api"
+  : "/api";
 
 // State variables
 let activePanel = "home";
