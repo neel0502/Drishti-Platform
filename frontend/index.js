@@ -25,6 +25,7 @@ let profileLoaded = false;
 let currentProfile = null;
 let mockFir = null;
 let mockExtraction = null;
+let syntheticScenario = null;
 
 // DOM Ready
 document.addEventListener("DOMContentLoaded", () => {
@@ -161,8 +162,10 @@ function initMockIntake() {
     try {
       const response = await fetch(`${API_BASE}/synthetic-scenarios/generate`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({scenario:document.getElementById("synthetic-scenario-type").value, caseCount:Number(document.getElementById("synthetic-case-count").value)})});
       const data = await response.json(); if (!response.ok) throw new Error(data.detail || "Scenario generation unavailable");
+      syntheticScenario = data;
       syntheticResult.classList.remove("empty-state-detail");
-      syntheticResult.innerHTML = `<div class="demo-safety-note"><strong>SYNTHETIC TEST DATA.</strong> ${escapeLab(data.notice)}</div><h3 style="margin-top:12px">${escapeLab(data.title)}</h3><p>${escapeLab(data.testPlan)}</p><div class="details-list">${data.cases.map(item => `<div class="details-item"><span class="details-label">${escapeLab(item.crimeNo)} · ${escapeLab(item.district)}</span><span class="details-value">${escapeLab(item.offence)} · ${escapeLab(item.vehicle)} · ${escapeLab(item.phone)}</span></div>`).join("")}</div><p class="header-muted-label">Schema coverage: ${data.schemaTables.map(escapeLab).join(" · ")}</p>`;
+      syntheticResult.innerHTML = `<div class="demo-safety-note"><strong>SYNTHETIC TEST DATA.</strong> ${escapeLab(data.notice)}</div><h3 style="margin-top:12px">${escapeLab(data.title)}</h3><p>${escapeLab(data.testPlan)}</p><div class="details-list">${data.cases.map(item => `<div class="details-item"><span class="details-label">${escapeLab(item.crimeNo)} · ${escapeLab(item.district)}</span><span class="details-value">${escapeLab(item.offence)} · ${escapeLab(item.vehicle)} · ${escapeLab(item.phone)}</span></div>`).join("")}</div><p class="header-muted-label">Schema coverage: ${data.schemaTables.map(escapeLab).join(" · ")}</p><button id="synthetic-validate" class="btn btn-secondary" type="button">Validate scenario with AI</button><div id="synthetic-validation" class="header-muted-label"></div>`;
+      document.querySelector("#synthetic-validate").addEventListener("click", runSyntheticValidation);
     } catch (error) { syntheticResult.textContent = error.message; }
   });
 
@@ -214,6 +217,23 @@ function initMockIntake() {
     fillSearch(lead);
   });
   reconstructionButton.addEventListener("click", () => triggerNav("reconstruction"));
+}
+
+async function runSyntheticValidation() {
+  if (!syntheticScenario?.cases?.length) return;
+  const output = document.querySelector("#synthetic-validation"); const scenarioCase = syntheticScenario.cases[0];
+  output.textContent = "Running synthetic case through the live classification, semantic-search, and evidence checks…";
+  try {
+    const [classificationResponse, semanticResponse] = await Promise.all([
+      fetch(`${API_BASE}/fir-classification`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({narrative:scenarioCase.narrative})}),
+      fetch(`${API_BASE}/semantic-search?q=${encodeURIComponent(scenarioCase.narrative)}`)
+    ]);
+    const classification = await classificationResponse.json(); const semantic = await semanticResponse.json();
+    if (!classificationResponse.ok) throw new Error(classification.detail || "Classification validation unavailable");
+    if (!semanticResponse.ok) throw new Error(semantic.detail || "Semantic validation unavailable");
+    const gaps = [scenarioCase.vehicle, scenarioCase.phone].filter(value => /not (recorded|applicable)/i.test(value));
+    output.innerHTML = `<div class="quality-flag"><strong>AI validation complete — synthetic sandbox only.</strong><br>Offence suggestion: ${escapeLab(classification.suggestions[0].offence)} (${classification.suggestions[0].confidence}%).<br>Closest indexed FIR: ${escapeLab(semantic.cases[0]?.crimeNo || "none")} (${semantic.cases[0]?.semanticConfidence ?? 0}% narrative similarity).<br>Evidence gaps: ${gaps.length ? escapeLab(gaps.join("; ")) : "none declared"}.<br><em>Results validate system behaviour; they do not validate a real investigation.</em></div>`;
+  } catch (error) { output.textContent = error.message; }
 }
 
 function refreshMockHandoff() {
