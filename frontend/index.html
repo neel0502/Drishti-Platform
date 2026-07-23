@@ -733,7 +733,7 @@
         </section>
 
         <section class="content-panel" id="forecast-panel">
-          <div class="lab-hero"><div><span class="eyebrow">RETROSPECTIVE VALIDATION</span><h2>Crime forecast backtesting</h2><p>Hide known historical months, predict them from earlier data, and compare predictions with what actually occurred.</p></div><div class="method-chip">No future claims</div></div>
+          <div class="lab-hero"><div><span class="eyebrow">ML FORECAST VALIDATION</span><h2>Crime-volume forecast backtesting</h2><p>Train a supervised ML model on earlier FIR volumes, hide known historical months, then compare predictions with actual recorded crime volume.</p></div><div class="method-chip">Held-out validation</div></div>
           <div class="panel-card lab-controls"><select id="forecast-district" class="filter-select"></select><select id="forecast-category" class="filter-select"><option value="">All categories</option><option value="1">Crimes Against Body</option><option value="2">Crimes Against Property</option><option value="3">Crimes Against Women</option><option value="4">Economic Offences</option><option value="6">Cyber Crimes</option><option value="7">Drug Offences</option></select><select id="forecast-months" class="filter-select"><option value="3">3 holdout months</option><option value="6" selected>6 holdout months</option><option value="9">9 holdout months</option><option value="12">12 holdout months</option></select><button id="forecast-run" class="btn btn-primary">Run backtest</button></div>
           <div id="forecast-metrics" class="metric-grid"></div><div class="panel-card"><div class="card-header"><h3>Predicted vs actual historical volume</h3><span id="forecast-method" class="header-muted-label"></span></div><div class="chart-container forecast-chart"><canvas id="forecast-chart"></canvas></div></div><div id="forecast-note" class="analysis-note warning"></div>
         </section>
@@ -759,6 +759,6 @@
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <!-- Application logic -->
-  <script src="index.js?v=20260723-commandquery"></script>
+  <script src="index.js?v=20260723-mlforecast"></script>
 </body>
 </html>

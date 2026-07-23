@@ -9,6 +9,7 @@ import networkx as nx
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.cluster import MiniBatchKMeans
+from sklearn.ensemble import RandomForestRegressor
 import re
 import os
 import json
@@ -2337,10 +2338,38 @@ def forecast_backtest(
     if len(monthly) < holdoutMonths + 12:
         raise HTTPException(status_code=400, detail="Not enough monthly history for this backtest")
     actual = monthly.iloc[-holdoutMonths:]
+
+    def monthly_features(values, index):
+        """Lag and seasonality features available before the predicted month."""
+        period = full_index[index]
+        return [
+            float(values[index - 1]), float(values[index - 2]), float(values[index - 3]),
+            float(values[index - 6]), float(values[index - 12]),
+            math.sin(2 * math.pi * period.month / 12), math.cos(2 * math.pi * period.month / 12),
+        ]
+
     predictions = []
-    for period in actual.index:
-        history = monthly[monthly.index < period].tail(6)
-        predictions.append(float(history.mean()))
+    training_sizes = []
+    values = monthly.astype(float).tolist()
+    holdout_start = len(monthly) - holdoutMonths
+    for target_index in range(holdout_start, len(monthly)):
+        # Train only on months preceding the evaluated month. This keeps the
+        # backtest honest: future FIR volumes never enter the training rows.
+        train_indices = list(range(12, target_index))
+        if len(train_indices) < 8:
+            prediction = float(np.mean(values[max(0, target_index - 6):target_index]))
+            training_sizes.append(0)
+        else:
+            features = [monthly_features(values, index) for index in train_indices]
+            targets = [values[index] for index in train_indices]
+            model = RandomForestRegressor(
+                n_estimators=160, max_depth=4, min_samples_leaf=2,
+                random_state=42, n_jobs=1,
+            )
+            model.fit(features, targets)
+            prediction = float(model.predict([monthly_features(values, target_index)])[0])
+            training_sizes.append(len(train_indices))
+        predictions.append(max(0.0, prediction))
     actual_values = actual.astype(float).values
     predicted_values = np.asarray(predictions)
     mae = float(np.mean(np.abs(actual_values - predicted_values)))
@@ -2350,10 +2379,15 @@ def forecast_backtest(
     baseline_mae = float(np.mean(np.abs(actual_values - baseline)))
     return {
         "district": get_district_name(districtId), "crimeCategory": "All categories" if crimeHeadId is None else str(df_crime_head.loc[df_crime_head['CrimeHeadID'] == crimeHeadId, 'CrimeGroupName'].iloc[0]),
-        "model": "Six-month rolling mean", "holdoutMonths": holdoutMonths,
+        "model": "Random Forest monthly-volume model", "holdoutMonths": holdoutMonths,
+        "modelDetails": {
+            "algorithm": "Random Forest regression",
+            "features": ["1, 2, 3, 6 and 12-month FIR-volume lags", "month-of-year seasonality"],
+            "trainingRows": training_sizes,
+        },
         "metrics": {"mae": round(mae, 1), "mape": round(mape, 1) if mape is not None else None, "naiveMAE": round(baseline_mae, 1), "improvementVsNaive": round((baseline_mae - mae) / baseline_mae * 100, 1) if baseline_mae else 0},
         "series": [{"month": str(period), "actual": int(actual.loc[period]), "predicted": round(predictions[index], 1)} for index, period in enumerate(actual.index)],
-        "caveat": "This is retrospective validation on known historical months, not a guarantee of future crime volume.",
+        "caveat": "Retrospective ML backtest only: each predicted month is trained on earlier FIR volumes, then compared with the known holdout. It supports planning, not operational certainty or individual risk decisions.",
     }
 
 
