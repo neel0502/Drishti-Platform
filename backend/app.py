@@ -2347,6 +2347,78 @@ def case_lifecycle(districtId: Optional[int] = Query(default=None)):
     }
 
 
+@app.get("/api/lifecycle/priority")
+def lifecycle_priority(districtId: Optional[int] = Query(default=None), limit: int = Query(default=8, ge=1, le=20)):
+    """Rank older open FIRs for supervisor review using a historical delay model.
+
+    The target is a process outcome only: whether a historical FIR had no
+    chargesheet within 180 days. It is not a risk score for a person.
+    """
+    cases = filtered_cases(district_id=districtId).copy()
+    if cases.empty:
+        raise HTTPException(status_code=404, detail="No cases found")
+    analysis_date = cases['_registered'].max()
+    cases['_ageDays'] = (analysis_date - cases['_registered']).dt.days
+    arrests = df_arrest.copy()
+    arrests['_date'] = pd.to_datetime(arrests['ArrestSurrenderDate'], errors='coerce')
+    sheets = df_chargesheet.copy()
+    sheets['_date'] = pd.to_datetime(sheets['csdate'], errors='coerce')
+    first_arrest = arrests.groupby('CaseMasterID')['_date'].min()
+    first_sheet = sheets.groupby('CaseMasterID')['_date'].min()
+    accused_count = df_accused.groupby('CaseMasterID').size()
+    victim_count = df_victim.groupby('CaseMasterID').size()
+
+    cases['_arrestDays'] = cases['CaseMasterID'].map(first_arrest).sub(cases['_registered']).dt.days
+    cases['_sheetDays'] = cases['CaseMasterID'].map(first_sheet).sub(cases['_registered']).dt.days
+    cases['_hasArrest'] = cases['CaseMasterID'].isin(first_arrest.index).astype(int)
+    cases['_accusedCount'] = cases['CaseMasterID'].map(accused_count).fillna(0)
+    cases['_victimCount'] = cases['CaseMasterID'].map(victim_count).fillna(0)
+    cases['_narrativeLength'] = cases['BriefFacts'].fillna('').astype(str).str.len()
+    cases['_hour'] = pd.to_datetime(cases['IncidentFromDate'], errors='coerce').dt.hour.fillna(12)
+    cases['_month'] = cases['_registered'].dt.month
+    cases['_coordsPresent'] = (cases['latitude'].notna() & cases['longitude'].notna()).astype(int)
+
+    training = cases[cases['_ageDays'] >= 180].copy()
+    training['_delayed'] = ((training['_sheetDays'].isna()) | (training['_sheetDays'] > 180)).astype(int)
+    feature_columns = ['CrimeMajorHeadID', 'GravityOffenceID', '_DistrictID', 'PoliceStationID', '_hour', '_month', '_narrativeLength', '_accusedCount', '_victimCount', '_coordsPresent', '_hasArrest']
+    training_features = training[feature_columns].apply(pd.to_numeric, errors='coerce').fillna(0)
+    if len(training) < 50 or training['_delayed'].nunique() < 2:
+        raise HTTPException(status_code=400, detail="Not enough historical lifecycle outcomes to train the delay model")
+    model = RandomForestClassifier(n_estimators=180, max_depth=10, min_samples_leaf=8, class_weight='balanced', random_state=42, n_jobs=1)
+    model.fit(training_features, training['_delayed'])
+
+    candidates = cases[(~cases['CaseStatusID'].isin([2, 3])) & (cases['_ageDays'] >= 30)].copy()
+    if candidates.empty:
+        return {"district": get_district_name(districtId) if districtId else "Karnataka", "analysisDate": analysis_date.strftime('%Y-%m-%d'), "cases": [], "model": "Random Forest investigation-delay model", "caveat": "No open FIRs aged 30 days or more in this selection."}
+    candidate_features = candidates[feature_columns].apply(pd.to_numeric, errors='coerce').fillna(0)
+    candidates['_delayProbability'] = model.predict_proba(candidate_features)[:, 1] * 100
+    candidates = candidates.sort_values(['_delayProbability', '_ageDays'], ascending=False).head(limit)
+    results = []
+    for _, row in candidates.iterrows():
+        signals = [f"FIR age {int(row['_ageDays'])} days"]
+        signals.append("No chargesheet record" if pd.isna(row['_sheetDays']) else f"Chargesheet recorded after {int(row['_sheetDays'])} days")
+        if not row['_hasArrest']:
+            signals.append("No arrest record linked")
+        if row['GravityOffenceID'] == 1:
+            signals.append("Heinous-offence classification")
+        if not row['_coordsPresent']:
+            signals.append("Location field unavailable")
+        results.append({
+            "caseId": int(row['CaseMasterID']), "crimeNo": str(row['CrimeNo']),
+            "district": get_district_name(row['_DistrictID']), "station": get_unit_name(row['PoliceStationID']),
+            "crimeType": str(row['_SubheadName']), "ageDays": int(row['_ageDays']),
+            "delayRisk": round(float(row['_delayProbability']), 1), "signals": signals,
+        })
+    return {
+        "district": get_district_name(districtId) if districtId else "Karnataka",
+        "analysisDate": analysis_date.strftime('%Y-%m-%d'), "cases": results,
+        "model": "Random Forest investigation-delay model",
+        "training": f"Trained on {len(training):,} FIRs at least 180 days old; target: no chargesheet within 180 days.",
+        "features": "FIR category, gravity, jurisdiction, incident timing, narrative completeness, linked accused/victim count, geocode availability, and arrest linkage.",
+        "caveat": "A process-priority recommendation only. It must not be used to judge a person or determine enforcement action; a supervisor must review the FIR and evidence record.",
+    }
+
+
 @app.get("/api/patrol/plan")
 def patrol_plan(
     districtId: int = Query(default=1),

@@ -394,11 +394,18 @@ async function runPatternDiscovery() {
 async function runLifecycleAnalysis() {
   const button = document.getElementById("lifecycle-run"); const district = document.getElementById("lifecycle-district").value;
   try {
-    const data = await fetchLab(`/lifecycle${district ? `?districtId=${district}` : ''}`, button); const initial = data.funnel[0].count;
+    const [data, priority] = await Promise.all([
+      fetchLab(`/lifecycle${district ? `?districtId=${district}` : ''}`, button),
+      fetch(`${API_BASE}/lifecycle/priority${district ? `?districtId=${district}` : ''}`).then(response => response.json())
+    ]); const initial = data.funnel[0].count;
     document.getElementById("lifecycle-funnel").innerHTML = data.funnel.map(stage => `<div class="funnel-stage"><div class="funnel-label">${escapeLab(stage.stage)}</div><div class="funnel-value">${stage.count.toLocaleString()}</div><div class="funnel-label">${Math.round(stage.count / initial * 100)}% of FIRs</div></div>`).join('');
     const metrics = [[data.timings.medianFIRToArrestDays,"Median days: FIR → arrest"],[data.timings.medianFIRToChargesheetDays,"Median days: FIR → chargesheet"],[data.exceptions.arrestWithoutChargesheet,"Arrest, no chargesheet",true],[data.exceptions.chargesheetWithoutArrest,"Chargesheet, no arrest",true],[data.exceptions.pendingOver90Days,"Pending over 90 days",true],[data.exceptions.chronologyConflicts,"Chronology conflicts",true]];
     document.getElementById("lifecycle-metrics").innerHTML = metrics.map(([value,label,alert]) => `<div class="metric-card ${alert ? 'alert':''}"><div class="value">${value ?? '—'}</div><div class="label">${escapeLab(label)}</div></div>`).join('');
     document.getElementById("lifecycle-table").innerHTML = data.bottlenecks.map(row => `<tr><td>${escapeLab(row.station)}</td><td>${row.cases}</td><td>${row.pending}</td><td>${row.pendingRate}%</td><td>${row.medianChargeDays == null ? '—' : `${Math.round(row.medianChargeDays)} days`}</td></tr>`).join('');
+    const priorityTable = document.getElementById("lifecycle-priority-table"); const priorityNote = document.getElementById("lifecycle-priority-note");
+    if (priority.detail) throw new Error(priority.detail);
+    priorityTable.innerHTML = priority.cases.length ? priority.cases.map(item => `<tr><td class="text-mono">${escapeLab(item.crimeNo)}</td><td>${escapeLab(item.crimeType)}</td><td>${escapeLab(item.station)}</td><td>${item.ageDays} days</td><td><span class="status-pill ${item.delayRisk >= 70 ? 'red-pill' : 'amber-pill'}">${item.delayRisk}%</span></td><td>${escapeLab(item.signals.join(' · '))}</td></tr>`).join('') : '<tr><td colspan="6">No open FIRs currently meet the supervisory-review threshold.</td></tr>';
+    priorityNote.textContent = `${priority.model}. ${priority.training} ${priority.caveat}`;
     document.getElementById("lifecycle-note").textContent = `${data.district} · analysis date ${data.analysisDate}. ${data.method}`;
   } catch (error) { document.getElementById("lifecycle-note").textContent = error.message; }
 }

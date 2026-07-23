@@ -686,6 +686,7 @@
           <div class="panel-card lab-controls"><select id="lifecycle-district" class="filter-select"><option value="">All Karnataka</option></select><button id="lifecycle-run" class="btn btn-primary">Analyse lifecycle</button></div>
           <div id="lifecycle-funnel" class="funnel-grid"></div>
           <div id="lifecycle-metrics" class="metric-grid"></div>
+          <div class="panel-card"><div class="card-header"><h3>ML supervisory review queue</h3><span class="header-muted-label">Open FIRs with predicted investigation-delay risk</span></div><div class="cases-table-wrapper"><table class="data-table"><thead><tr><th>FIR</th><th>Offence</th><th>Station</th><th>Age</th><th>ML delay risk</th><th>Review signals</th></tr></thead><tbody id="lifecycle-priority-table"></tbody></table></div><div id="lifecycle-priority-note" class="analysis-note warning"></div></div>
           <div class="panel-card"><div class="card-header"><h3>Station bottlenecks</h3><span class="header-muted-label">Ranked by unresolved share</span></div><div class="cases-table-wrapper"><table class="data-table"><thead><tr><th>Station</th><th>Cases</th><th>Pending</th><th>Pending rate</th><th>Median to chargesheet</th></tr></thead><tbody id="lifecycle-table"></tbody></table></div></div>
           <div id="lifecycle-note" class="analysis-note"></div>
         </section>
@@ -768,6 +769,6 @@
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <!-- Application logic -->
-  <script src="index.js?v=20260724-mlsimilarity"></script>
+  <script src="index.js?v=20260724-mlpriority"></script>
 </body>
 </html>
