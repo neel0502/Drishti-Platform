@@ -822,6 +822,42 @@ def get_map_data(
         ],
     }
 
+@app.get("/api/hotspots/forecast")
+def hotspot_forecast(districtId: int = Query(default=1), crimeHeadId: Optional[int] = Query(default=None)):
+    """Forecast next-month grid demand from historical, geocoded FIR volume."""
+    cases = filtered_cases(district_id=districtId, crime_head_id=crimeHeadId).dropna(subset=["latitude", "longitude"]).copy()
+    cases["_cell"] = cases["latitude"].round(2).astype(str) + "," + cases["longitude"].round(2).astype(str)
+    cases["_month"] = cases["_registered"].dt.to_period("M")
+    top_cells = cases["_cell"].value_counts().head(60).index.tolist()
+    cases = cases[cases["_cell"].isin(top_cells)]
+    months = pd.period_range(cases["_month"].min(), cases["_month"].max(), freq="M")
+    if len(months) < 16 or not top_cells:
+        raise HTTPException(status_code=400, detail="Not enough geocoded FIR history for an ML hotspot forecast")
+    grid = cases.groupby(["_cell", "_month"]).size().unstack(fill_value=0).reindex(index=top_cells, columns=months, fill_value=0)
+
+    def features(cell, index):
+        period = months[index]
+        values = grid.loc[cell].values.astype(float)
+        return [values[index-1], values[index-2], values[index-3], values[max(0, index-3):index].mean(), math.sin(2*math.pi*period.month/12), math.cos(2*math.pi*period.month/12)]
+
+    train_x, train_y = [], []
+    for cell in top_cells:
+        for index in range(3, len(months)):
+            train_x.append(features(cell, index)); train_y.append(float(grid.loc[cell].iloc[index]))
+    model = RandomForestRegressor(n_estimators=180, max_depth=7, min_samples_leaf=2, random_state=42, n_jobs=1)
+    model.fit(train_x, train_y)
+    next_month = months[-1] + 1
+    zones = []
+    for cell in top_cells:
+        # Next-period features are computed from observed history; seasonality changes to next month.
+        values = grid.loc[cell].values.astype(float)
+        next_features = [values[-1], values[-2], values[-3], values[-3:].mean(), math.sin(2*math.pi*next_month.month/12), math.cos(2*math.pi*next_month.month/12)]
+        prediction = max(0.0, float(model.predict([next_features])[0]))
+        lat, lng = [float(value) for value in cell.split(",")]
+        zones.append({"lat":lat,"lng":lng,"predictedIncidents":round(prediction,1),"recentIncidents":int(values[-3:].sum()),"cell":cell})
+    zones.sort(key=lambda item: item["predictedIncidents"], reverse=True)
+    return {"district":get_district_name(districtId),"forecastMonth":str(next_month),"zones":zones[:10],"model":"Random Forest hotspot-demand model","method":"Grid-cell FIR volume with 1–3 month lags, rolling 3-month volume, and month-of-year seasonality.","caveat":"Planning forecast only. It predicts aggregate historical demand by map cell, not an individual's behaviour or certainty of crime."}
+
 @app.get("/api/search")
 def search_investigate(q: str = Query(..., min_length=2)):
     q = q.lower().strip()

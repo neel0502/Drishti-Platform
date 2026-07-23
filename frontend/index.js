@@ -724,6 +724,7 @@ async function fetchMapData() {
 
 let geojsonLayer = null;
 let incidentMarkersGroup = L.layerGroup();
+let hotspotForecastLayer = null;
 
 function initMapLayers(geojson, incidents) {
   // 1. Dashboard mini map
@@ -891,6 +892,7 @@ function getCategoryText(id) {
 function initMapFilters() {
   document.getElementById("map-filter-category").addEventListener("change", updateIncidentMarkers);
   document.getElementById("map-filter-district").addEventListener("change", updateIncidentMarkers);
+  document.getElementById("btn-ml-hotspots").addEventListener("click", runHotspotForecast);
   
   // Hour slider change
   const slider = document.getElementById("time-of-day-slider");
@@ -966,6 +968,21 @@ function initMapFilters() {
   document.getElementById("btn-floating-situations").addEventListener("click", () => {
     triggerNav("alerts");
   });
+}
+
+async function runHotspotForecast() {
+  const button = document.getElementById("btn-ml-hotspots");
+  const district = document.getElementById("map-filter-district").value || "1";
+  const category = document.getElementById("map-filter-category").value;
+  const outlook = document.getElementById("map-ml-outlook");
+  try {
+    const data = await fetchLab(`/hotspots/forecast?districtId=${district}${category ? `&crimeHeadId=${category}` : ""}`, button);
+    if (hotspotForecastLayer) hotspotForecastLayer.remove();
+    hotspotForecastLayer = L.layerGroup().addTo(mainMap);
+    data.zones.forEach((zone, index) => L.circleMarker([zone.lat, zone.lng], {radius:7 + Math.min(zone.predictedIncidents, 8), color:"#ffbf47", fillColor:"#f85149", fillOpacity:.68, weight:2}).bindPopup(`<strong>ML hotspot ${index+1}</strong><br>Forecast: ${zone.predictedIncidents} incidents<br>Recent FIRs: ${zone.recentIncidents}<br>${escapeLab(data.forecastMonth)}`).addTo(hotspotForecastLayer));
+    outlook.hidden = false;
+    outlook.innerHTML = `<strong>ML hotspot outlook · ${escapeLab(data.forecastMonth)}</strong>${escapeLab(data.district)} · ${data.zones.length} forecast cells shown in red/amber.<br><br>${escapeLab(data.method)}<br><br><em>${escapeLab(data.caveat)}</em>`;
+  } catch (error) { outlook.hidden=false; outlook.textContent=error.message; }
 }
 
 let sliderChart = null;

@@ -1062,6 +1062,8 @@ button {
 .search-hero .command-query-result strong { color:#ffffff; }
 .search-hero .command-query-result .command-query-meta { color:#bad6ec; }
 .search-hero .command-query-result .command-query-suspects span { border-color:rgba(151, 210, 255, .55); background:rgba(255,255,255,.08); color:#ffffff; }
+.map-ml-outlook { position:absolute; left:18px; top:76px; z-index:700; width:min(330px,calc(100% - 36px)); padding:12px; border-radius:9px; background:rgba(7,22,39,.94); border:1px solid rgba(105,185,255,.55); color:#d9ebfb; font-size:11px; box-shadow:0 8px 24px rgba(0,0,0,.24); }
+.map-ml-outlook strong { color:#fff; display:block; margin-bottom:4px; font-size:12px; }
 
 .search-chips {
   display: flex;

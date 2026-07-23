@@ -15,7 +15,7 @@
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="index.css?v=20260723-querycontrast">
+  <link rel="stylesheet" href="index.css?v=20260723-mlhotspots">
 </head>
 <body>
 
@@ -259,6 +259,7 @@
                 <option value="">All Karnataka</option>
                 <!-- Injected dynamically -->
               </select>
+              <button id="btn-ml-hotspots" class="btn btn-primary btn-sm" type="button">ML hotspot outlook</button>
             </div>
             <div class="floating-badge-area">
               <button class="alert-pulse-badge" id="btn-floating-situations">
@@ -271,6 +272,7 @@
           <!-- Full screen map container -->
           <div class="full-map-wrapper">
             <div id="main-crime-map" class="full-map-canvas"></div>
+            <div id="map-ml-outlook" class="map-ml-outlook" hidden></div>
             
             <!-- Floating Alert Card Top-Right -->
             <div class="map-floating-alert-card" id="map-alert-card">
@@ -759,6 +761,6 @@
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <!-- Application logic -->
-  <script src="index.js?v=20260723-mlforecast"></script>
+  <script src="index.js?v=20260723-mlhotspots"></script>
 </body>
 </html>
