@@ -1467,12 +1467,16 @@ function renderReconstructionSummary() {
 
   const decision = reconstructionData.decisionSupport;
   document.getElementById("reconstruction-decision").innerHTML = `
+    <div class="metric-grid" style="margin:0 0 14px;grid-template-columns:repeat(2,minmax(0,1fr));">
+      <div class="metric-card"><div class="value">${reconstructionData.dataCompleteness}%</div><div class="label">Evidence completeness</div></div>
+      <div class="metric-card ${decision.strongestLinkScore >= 75 ? 'alert' : ''}"><div class="value">${decision.strongestLinkScore}/100</div><div class="label">Strongest linked FIR</div></div>
+    </div>
     <div class="decision-score-row">
       <span class="status-pill ${decision.priority === 'HIGH REVIEW' ? 'red-pill' : 'blue-pill'}">${decision.priority}</span>
       <strong>Strongest case link: ${decision.strongestLinkScore}/100</strong>
     </div>
     <div class="header-muted-label" style="margin:10px 0;">Affected districts: ${decision.affectedDistricts.join(', ') || 'Current district only'}</div>
-    <ol class="decision-list">${decision.recommendedActions.map(action => `<li>${action}</li>`).join('')}</ol>
+    <div class="header-muted-label" style="margin:10px 0 4px;">NEXT OFFICER ACTION</div><ol class="decision-list">${decision.recommendedActions.map(action => `<li>${action}</li>`).join('')}</ol>
     <div class="human-review-note">Human approval is mandatory before any operational action.</div>
   `;
   document.getElementById("btn-request-review").disabled = false;
