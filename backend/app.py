@@ -95,6 +95,22 @@ def health_check():
     }
 
 
+@app.get("/api/ai/model-registry")
+def ai_model_registry():
+    """Transparent registry of deployed analytical models and their safeguards."""
+    return {
+        "dataNotice": "Demonstration dataset built to the official KSP schema. It is not Karnataka Police operational data.",
+        "models": [
+            {"name":"Narrative pattern discovery", "algorithm":"TF-IDF + MiniBatch K-Means", "uses":"FIR narrative, offence, district", "doesNotUse":"Identity, biometrics, or external surveillance", "guardrail":"Clusters are leads only; inspect representative FIRs."},
+            {"name":"Case-link confidence", "algorithm":"Random Forest FIR-pair classifier", "uses":"Narrative similarity, offence, district, location, incident time, recorded links", "doesNotUse":"Unverified associations as proof", "guardrail":"Validate source FIRs before coordinating or merging investigations."},
+            {"name":"Offence suggestion", "algorithm":"TF-IDF + Logistic Regression", "uses":"FIR narrative and existing offence labels", "doesNotUse":"Legal judgement or statutory interpretation", "guardrail":"Station officer confirms the official classification."},
+            {"name":"Crime-demand forecast", "algorithm":"Random Forest regressor", "uses":"Aggregate FIR volume, lags, seasonality, map cells", "doesNotUse":"Individual behaviour prediction", "guardrail":"Planning aid only; supervisor approval required."},
+            {"name":"Investigation-delay review", "algorithm":"Random Forest classifier", "uses":"FIR lifecycle and record-completeness features", "doesNotUse":"Guilt, risk of a person, sentencing, or enforcement eligibility", "guardrail":"Ranks files for supervisory review only."},
+            {"name":"Volume anomaly watch", "algorithm":"Isolation Forest", "uses":"Aggregate monthly volume, trend, and seasonality", "doesNotUse":"Certainty that crime will occur", "guardrail":"Validate linked FIRs before issuing an operational alert."},
+        ],
+    }
+
+
 @app.middleware("http")
 async def analytics_readiness_guard(request, call_next):
     """Keep the service reachable while the analytics indexes initialize."""

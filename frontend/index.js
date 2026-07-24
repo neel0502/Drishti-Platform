@@ -516,19 +516,21 @@ async function runAIConfidence() {
   const button = document.getElementById("ai-refresh"); const district = document.getElementById("ai-district").value || "1";
   const summary = document.getElementById("ai-confidence-summary"); const models = document.getElementById("ai-confidence-models");
   try {
-    const [patterns, forecast, hotspots] = await Promise.all([
+    const [patterns, forecast, hotspots, registry] = await Promise.all([
       fetchLab(`/patterns/discover?districtId=${district}&clusterCount=4`, button),
       fetch(`${API_BASE}/forecast/backtest?districtId=${district}&holdoutMonths=6`).then(r=>r.json()),
-      fetch(`${API_BASE}/hotspots/forecast?districtId=${district}`).then(r=>r.json())
+      fetch(`${API_BASE}/hotspots/forecast?districtId=${district}`).then(r=>r.json()),
+      fetch(`${API_BASE}/ai/model-registry`).then(r=>r.json())
     ]);
     if (forecast.detail) throw new Error(forecast.detail); if (hotspots.detail) throw new Error(hotspots.detail);
     const cohesion = Math.round(patterns.clusters.reduce((sum, item)=>sum+item.cohesion,0)/patterns.clusters.length);
-    summary.innerHTML = `<strong>AI evidence loaded for ${escapeLab(forecast.district)}.</strong> Every result below is evidence-led and requires officer review before operational action.`;
-    models.innerHTML = [
+    summary.innerHTML = `<strong>AI evidence loaded for ${escapeLab(forecast.district)}.</strong> ${escapeLab(registry.dataNotice)} Every result below is evidence-led and requires officer review before operational action.`;
+    const liveModels = [
       ["Narrative pattern discovery", `${cohesion}% cluster cohesion`, "TF-IDF vectors + MiniBatch K-Means", "FIR narrative text, crime type, district", "Review representative FIRs; clusters are leads, not proof."],
       ["Crime-volume forecasting", `${forecast.metrics.improvementVsNaive}% vs naive baseline`, forecast.model, forecast.modelDetails.features.join("; "), "Use for planning only; validate against current operational intelligence."],
       ["Hotspot demand outlook", `${hotspots.zones[0]?.predictedIncidents ?? 0} predicted incidents in top cell`, hotspots.model, "Geocoded FIR volume, recent lags, seasonality", "Deploy only after supervisor review; never treat as certainty of crime."]
-    ].map(item=>`<article class="cluster-card"><div class="cluster-head"><h3>${escapeLab(item[0])}</h3><span class="cluster-score">${escapeLab(item[1])}</span></div><div class="funnel-label">Model: ${escapeLab(item[2])}</div><p style="font-size:11px;color:var(--text-secondary);margin-top:8px"><strong>Evidence:</strong> ${escapeLab(item[3])}</p><div class="quality-flag">Officer check: ${escapeLab(item[4])}</div></article>`).join("");
+    ];
+    models.innerHTML = liveModels.map(item=>`<article class="cluster-card"><div class="cluster-head"><h3>${escapeLab(item[0])}</h3><span class="cluster-score">${escapeLab(item[1])}</span></div><div class="funnel-label">Model: ${escapeLab(item[2])}</div><p style="font-size:11px;color:var(--text-secondary);margin-top:8px"><strong>Evidence:</strong> ${escapeLab(item[3])}</p><div class="quality-flag">Officer check: ${escapeLab(item[4])}</div></article>`).join("") + registry.models.map(item=>`<article class="cluster-card"><div class="cluster-head"><h3>${escapeLab(item.name)}</h3><span class="cluster-score">REGISTERED</span></div><div class="funnel-label">Model: ${escapeLab(item.algorithm)}</div><p style="font-size:11px;color:var(--text-secondary);margin-top:8px"><strong>Uses:</strong> ${escapeLab(item.uses)}<br><strong>Does not use:</strong> ${escapeLab(item.doesNotUse)}</p><div class="quality-flag">Guardrail: ${escapeLab(item.guardrail)}</div></article>`).join("");
   } catch(error) { summary.textContent = error.message; }
 }
 
