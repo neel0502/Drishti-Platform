@@ -1478,7 +1478,9 @@ function renderReconstructionSummary() {
     <div class="header-muted-label" style="margin:10px 0;">Affected districts: ${decision.affectedDistricts.join(', ') || 'Current district only'}</div>
     <div class="header-muted-label" style="margin:10px 0 4px;">NEXT OFFICER ACTION</div><ol class="decision-list">${decision.recommendedActions.map(action => `<li>${action}</li>`).join('')}</ol>
     <div class="human-review-note">Human approval is mandatory before any operational action.</div>
+    <div class="header-muted-label" style="margin:14px 0 6px;">CASE ACTION HISTORY</div><div id="case-action-history" class="details-list">Loading recorded actions…</div>
   `;
+  loadCaseActionHistory(currentCase.caseId);
   document.getElementById("btn-request-review").disabled = false;
   document.getElementById("btn-approve-coordination").disabled = false;
   document.getElementById("reconstruction-audit-result").textContent = "";
@@ -1555,6 +1557,12 @@ async function submitOperationalAction(approved) {
   document.getElementById("reconstruction-audit-result").textContent = response.ok
     ? `Audit #${result.actionId}: ${result.status} · ${result.timestamp}`
     : `Action could not be recorded: ${result.detail || response.status}`;
+  if (response.ok) loadCaseActionHistory(reconstructionData.case.caseId);
+}
+
+async function loadCaseActionHistory(caseId) {
+  const box=document.querySelector("#case-action-history"); if (!box) return;
+  try { const data=await fetch(`${API_BASE}/actions?caseId=${encodeURIComponent(caseId)}`).then(r=>r.json()); const actions=data.actions||[]; box.innerHTML=actions.length?actions.slice().reverse().map(a=>`<div class="details-item"><span class="details-label">${escapeLab(a.actionType)} · ${escapeLab(a.status)}</span><span class="details-value">${escapeLab(a.rationale)}<small style="display:block;color:var(--text-muted)">${escapeLab(a.timestamp)}</small></span></div>`).join(""):'No action recorded yet.'; } catch { box.textContent='Action history temporarily unavailable.'; }
 }
 
 // ─── SCREEN 4: INTELLIGENCE PROFILES ──────────────────────────────────────
