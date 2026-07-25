@@ -683,6 +683,7 @@ function renderSparkline(points) {
 function renderTrendChart(trend) {
   const ctx = document.getElementById("trend-chart-canvas").getContext("2d");
   if (trendChart) trendChart.destroy();
+  document.getElementById("trend-chart-note").textContent = trend.note || "Monthly FIR volume";
   
   // Custom plugin to draw Festive Season background overlay band
   const festivalBandPlugin = {
@@ -690,6 +691,7 @@ function renderTrendChart(trend) {
     beforeDraw: (chart) => {
       const { ctx, chartArea: { top, bottom, height }, scales: { x, y } } = chart;
       
+      if (!trend.festiveOverlay) return;
       const startIndex = trend.labels.indexOf(trend.festiveOverlay.start);
       const endIndex = trend.labels.indexOf(trend.festiveOverlay.end);
       

@@ -859,6 +859,13 @@ def get_dashboard():
     top_attention = ", ".join(attention_names[:2]) if attention_names else "no districts"
     heinous_case_ids = set(df_case[df_case['GravityOffenceID'] == 1]['CaseMasterID'])
     heinous_arrests = int(df_arrest['CaseMasterID'].isin(heinous_case_ids).sum())
+    trend_values = trend_data.values.tolist()
+    trend_is_stable = bool(trend_values) and (max(trend_values) - min(trend_values) < max(3, round(max(trend_values) * 0.10)))
+    trend_note = (
+        "Stable monthly volume in the current synthetic test dataset"
+        if trend_is_stable
+        else "Monthly FIR volume; review peaks before drawing operational conclusions"
+    )
 
     return {
         "morningBrief": (
@@ -887,8 +894,9 @@ def get_dashboard():
         "alerts": alerts,
         "trend": {
             "labels": trend_data.index.tolist(),
-            "values": trend_data.values.tolist(),
-            "festiveOverlay": {
+            "values": trend_values,
+            "note": trend_note,
+            "festiveOverlay": None if trend_is_stable else {
                 "start": "2023-10",
                 "end": "2023-11",
                 "label": "Festive Season — Annual Spike"
