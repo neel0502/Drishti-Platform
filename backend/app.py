@@ -15,6 +15,11 @@ import re
 import os
 import json
 import math
+import hashlib
+import mimetypes
+import tempfile
+import uuid
+from urllib.parse import unquote
 from datetime import datetime, timedelta, timezone
 from threading import Event, Lock, Thread
 from typing import Optional
@@ -60,6 +65,7 @@ df_status = None
 df_occupation = None
 df_employee = None
 df_court = None
+district_geometry_cache = {}
 
 # NLP & Network Variables
 vectorizer = TfidfVectorizer(stop_words='english')
@@ -75,6 +81,19 @@ analytics_initialization_lock = Lock()
 analytics_error = None
 operational_action_log = []
 hypothesis_boards = []
+development_evidence_registry = []
+EVIDENCE_UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "drishti-development-evidence")
+MAX_EVIDENCE_UPLOAD_BYTES = 25 * 1024 * 1024
+EVIDENCE_CATEGORIES = {
+    "cctv_export": "CCTV export",
+    "scene_image": "Scene image",
+    "body_camera": "Body-camera clip",
+    "document": "Document or statement",
+    "digital_artifact": "Digital artifact",
+}
+ALLOWED_EVIDENCE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4", ".webm", ".mov", ".pdf", ".txt", ".doc", ".docx"}
+ALLOWED_EVIDENCE_MIME_PREFIXES = ("image/", "video/")
+ALLOWED_EVIDENCE_MIME_TYPES = {"application/pdf", "text/plain", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/octet-stream"}
 data_source_status = {
     "requested": "csv",
     "active": "csv",
@@ -99,7 +118,7 @@ def health_check():
 def ai_model_registry():
     """Transparent registry of deployed analytical models and their safeguards."""
     return {
-        "dataNotice": "Demonstration dataset built to the official KSP schema. It is not Karnataka Police operational data.",
+        "dataNotice": "Demonstration dataset based on a policing-data schema. It is not operational data.",
         "models": [
             {"name":"Narrative pattern discovery", "algorithm":"TF-IDF + MiniBatch K-Means", "uses":"FIR narrative, offence, district", "doesNotUse":"Identity, biometrics, or external surveillance", "guardrail":"Clusters are leads only; inspect representative FIRs."},
             {"name":"Case-link confidence", "algorithm":"Random Forest FIR-pair classifier", "uses":"Narrative similarity, offence, district, location, incident time, recorded links", "doesNotUse":"Unverified associations as proof", "guardrail":"Validate source FIRs before coordinating or merging investigations."},
@@ -1199,7 +1218,7 @@ def command_query(q: str = Query(..., min_length=4)):
     working = df_case.copy()
     filters = []
 
-    # Match known KSP districts by name, allowing officers to omit words such
+    # Match known districts by name, allowing officers to omit words such
     # as "district" or use a partial name in a spoken-style query.
     district_matches = []
     for _, district in df_district.iterrows():
@@ -1213,7 +1232,7 @@ def command_query(q: str = Query(..., min_length=4)):
         working = working[working["_DistrictID"].isin(district_ids)]
         filters.append("District: " + ", ".join(item[1] for item in district_matches[:3]))
 
-    # Match a supplied offence phrase against the KSP crime sub-head labels.
+    # Match a supplied offence phrase against the crime sub-head labels.
     offence_matches = []
     for value in df_case["_SubheadName"].dropna().astype(str).unique():
         words = [word for word in re.findall(r"[a-z]{4,}", value.lower())]
@@ -1434,7 +1453,7 @@ def generate_synthetic_scenario(request: SyntheticScenarioRequest):
         "synthetic": True, "title": template['title'], "cases": cases,
         "schemaTables": ["CaseMaster", "Accused", "Victim", "ComplainantDetails", "ArrestSurrender", "ChargesheetDetails"],
         "testPlan": template['test'],
-        "notice": "Synthetic test data only. It is generated in memory for the demo sandbox, is not written to Catalyst Data Store, and must never be represented as Karnataka Police data.",
+        "notice": "Synthetic test data only. It is generated in memory for the demo sandbox, is not written to Catalyst Data Store, and must never be represented as production data.",
     }
 
 
@@ -1488,14 +1507,14 @@ def get_fir_intake_options():
 
 @app.post("/api/firs")
 def create_development_fir(fir: FIRCreateRequest):
-    """Create a KSP-schema FIR graph in the Catalyst development datastore."""
+    """Create a schema-mapped FIR graph in the Catalyst development datastore."""
     if data_source_status["active"] != "catalyst":
         raise HTTPException(status_code=503, detail="FIR creation requires Catalyst Data Store")
     station = df_unit[df_unit["UnitID"] == fir.policeStationId]
     officer = df_employee[df_employee["EmployeeID"] == fir.policePersonId]
     offence = df_crime_subhead[df_crime_subhead["CrimeSubHeadID"] == fir.crimeMinorHeadId]
     if station.empty or officer.empty or offence.empty:
-        raise HTTPException(status_code=422, detail="Select a valid KSP station, officer, and offence")
+        raise HTTPException(status_code=422, detail="Select a valid station, officer, and offence")
     if not (11.5 <= fir.latitude <= 18.8 and 74.0 <= fir.longitude <= 78.8):
         raise HTTPException(status_code=422, detail="Coordinates must be within Karnataka")
     station_row, officer_row, offence_row = station.iloc[0], officer.iloc[0], offence.iloc[0]
@@ -1532,6 +1551,78 @@ def create_development_fir(fir: FIRCreateRequest):
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Catalyst development FIR write failed: {exc}")
     return {"caseId": case_id, "crimeNo": crime_no, "environment": "Catalyst Development", "createdTables": list(graph.keys())}
+
+
+def valid_evidence_upload(filename: str, mime_type: str) -> bool:
+    extension = os.path.splitext(filename.lower())[1]
+    return extension in ALLOWED_EVIDENCE_EXTENSIONS and (
+        mime_type.startswith(ALLOWED_EVIDENCE_MIME_PREFIXES) or mime_type in ALLOWED_EVIDENCE_MIME_TYPES
+    )
+
+
+@app.post("/api/evidence")
+async def upload_development_evidence(
+    request: Request,
+    caseId: Optional[int] = Query(None, ge=1),
+    category: str = Query("document"),
+    source: str = Query("station_intake"),
+    note: str = Query("", max_length=2000),
+):
+    """Store a bounded development evidence file with immutable metadata and checksum.
+
+    Files are deliberately written only to temporary AppSail/local storage. They are
+    never exposed through a public download endpoint and are not production evidence.
+    """
+    if category not in EVIDENCE_CATEGORIES:
+        raise HTTPException(status_code=422, detail="Choose a valid evidence type")
+    encoded_filename = request.headers.get("x-evidence-filename", "")
+    filename = os.path.basename(unquote(encoded_filename)).strip() or "uploaded-evidence"
+    mime_type = request.headers.get("content-type", "application/octet-stream").split(";", 1)[0].strip().lower()
+    if not valid_evidence_upload(filename, mime_type):
+        raise HTTPException(status_code=415, detail="Supported uploads are images, MP4/WebM/MOV video, PDF, text, DOC, and DOCX files")
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > MAX_EVIDENCE_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Evidence files are limited to 25 MB in the development prototype")
+    content = await request.body()
+    if not content:
+        raise HTTPException(status_code=422, detail="Evidence upload is empty")
+    if len(content) > MAX_EVIDENCE_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Evidence files are limited to 25 MB in the development prototype")
+    evidence_id = f"DEV-EV-{uuid.uuid4().hex[:10].upper()}"
+    os.makedirs(EVIDENCE_UPLOAD_DIR, exist_ok=True)
+    stored_name = f"{evidence_id}{os.path.splitext(filename)[1].lower()}"
+    stored_path = os.path.join(EVIDENCE_UPLOAD_DIR, stored_name)
+    with open(stored_path, "wb") as stream:
+        stream.write(content)
+    checksum = hashlib.sha256(content).hexdigest()
+    received_at = datetime.now(timezone.utc).isoformat()
+    record = {
+        "id": evidence_id,
+        "caseId": caseId,
+        "fileName": filename,
+        "mimeType": mime_type or mimetypes.guess_type(filename)[0] or "application/octet-stream",
+        "sizeBytes": len(content),
+        "sha256": checksum,
+        "sha256Short": checksum[:16],
+        "category": category,
+        "categoryLabel": EVIDENCE_CATEGORIES[category],
+        "source": source[:80],
+        "noteRecorded": bool(note.strip()),
+        "receivedAt": received_at,
+        "storageNotice": "Stored only in temporary development application storage; not a production evidence vault.",
+    }
+    development_evidence_registry.insert(0, record)
+    del development_evidence_registry[100:]
+    return record
+
+
+@app.get("/api/evidence")
+def list_development_evidence(caseId: Optional[int] = Query(None, ge=1)):
+    """Return development evidence metadata only; file content is intentionally not served."""
+    records = development_evidence_registry
+    if caseId is not None:
+        records = [record for record in records if record["caseId"] == caseId]
+    return {"records": records, "notice": "Metadata only. Development uploads are not exposed as downloadable evidence files."}
 
 
 @app.get("/api/cases/{case_id}/links")
@@ -2432,6 +2523,64 @@ def filtered_cases(district_id=None, crime_head_id=None, date_from=None, date_to
     return working.dropna(subset=['_registered'])
 
 
+def _point_on_segment(lng, lat, start, end, epsilon=1e-9):
+    """Return True when a point lies on a GeoJSON line segment."""
+    x1, y1 = start[0], start[1]
+    x2, y2 = end[0], end[1]
+    cross_product = (lng - x1) * (y2 - y1) - (lat - y1) * (x2 - x1)
+    if abs(cross_product) > epsilon:
+        return False
+    return min(x1, x2) - epsilon <= lng <= max(x1, x2) + epsilon and min(y1, y2) - epsilon <= lat <= max(y1, y2) + epsilon
+
+
+def _point_in_ring(lng, lat, ring):
+    """Ray-casting point-in-polygon check for one GeoJSON linear ring."""
+    inside = False
+    for index in range(len(ring) - 1):
+        start, end = ring[index], ring[index + 1]
+        if _point_on_segment(lng, lat, start, end):
+            return True
+        x1, y1 = start[0], start[1]
+        x2, y2 = end[0], end[1]
+        if (y1 > lat) != (y2 > lat):
+            intersection_lng = (x2 - x1) * (lat - y1) / (y2 - y1) + x1
+            if lng < intersection_lng:
+                inside = not inside
+    return inside
+
+
+def _point_in_geojson_geometry(lng, lat, geometry):
+    """Check a point against Polygon or MultiPolygon GeoJSON, including holes."""
+    if not geometry:
+        return False
+    polygons = [geometry.get("coordinates", [])] if geometry.get("type") == "Polygon" else geometry.get("coordinates", [])
+    for polygon in polygons:
+        if not polygon or not _point_in_ring(lng, lat, polygon[0]):
+            continue
+        if not any(_point_in_ring(lng, lat, hole) for hole in polygon[1:]):
+            return True
+    return False
+
+
+def point_is_within_selected_district(latitude, longitude, district_id):
+    """Accept only coordinates inside the selected district's official map boundary."""
+    try:
+        lat, lng = float(latitude), float(longitude)
+    except (TypeError, ValueError):
+        return False
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        return False
+    district_name = get_district_name(district_id)
+    geometry = district_geometry_cache.get(district_name)
+    if geometry is None:
+        with open(os.path.join(OUTPUT_DIR, "karnataka_districts.geojson"), "r", encoding="utf-8") as source:
+            features = json.load(source).get("features", [])
+        feature = next((item for item in features if str(item.get("properties", {}).get("NAME_2", "")).lower() == district_name.lower()), None)
+        geometry = feature.get("geometry") if feature else False
+        district_geometry_cache[district_name] = geometry
+    return bool(geometry) and _point_in_geojson_geometry(lng, lat, geometry)
+
+
 @app.get("/api/patterns/discover")
 def discover_patterns(
     districtId: Optional[int] = Query(default=None),
@@ -2639,6 +2788,15 @@ def patrol_plan(
     latest = cases['_registered'].max()
     recent = cases[cases['_registered'] >= latest - pd.Timedelta(days=89)].copy()
     recent = recent.dropna(subset=['latitude', 'longitude'])
+    geocoded_case_count = int(len(recent))
+    within_district = [
+        point_is_within_selected_district(latitude, longitude, districtId)
+        for latitude, longitude in zip(recent['latitude'], recent['longitude'])
+    ]
+    recent = recent.loc[within_district].copy()
+    excluded_coordinate_count = geocoded_case_count - int(len(recent))
+    if recent.empty:
+        raise HTTPException(status_code=404, detail="No recent FIR coordinates fall inside the selected district boundary")
     recent['_latCell'] = recent['latitude'].round(2)
     recent['_lngCell'] = recent['longitude'].round(2)
     recent['_hour'] = pd.to_datetime(recent['IncidentFromDate'], errors='coerce').dt.hour
@@ -2686,10 +2844,15 @@ def patrol_plan(
     return {
         "district": get_district_name(districtId), "availableUnits": availableUnits,
         "analysisWindow": {"from": (latest - pd.Timedelta(days=89)).strftime('%Y-%m-%d'), "to": latest.strftime('%Y-%m-%d')},
+        "coordinateScope": {
+            "label": f"{get_district_name(districtId)} only",
+            "accepted": int(len(recent)),
+            "excludedOutsideBoundary": excluded_coordinate_count,
+        },
         "coverageIndex": scenario_coverage, "baselineCoverageIndex": baseline_coverage,
         "coverageDelta": round(scenario_coverage - baseline_coverage, 1), "zones": zones,
         "scenario": {"heinousWeight": heinousWeight, "recencyWeight": recencyWeight, "shiftStart": shiftStart, "shiftEnd": shiftEnd},
-        "method": f"90-day grid demand score = incidents + {heinousWeight}× heinous incidents + {recencyWeight}× incidents in the latest 30 days, filtered to the selected shift.",
+        "method": "Uses only FIR coordinates inside the selected district boundary from the last 90 days for the selected shift. Coordinates outside that boundary are excluded. The deployment focus gives more attention to either recent activity or serious offences; the balanced plan considers both.",
         "caveat": "Planning aid only. Coverage index measures weighted historical demand represented by staffed zones; it does not predict or promise crime reduction. Supervisor approval is required.",
     }
 

@@ -2085,6 +2085,21 @@ body.dark-mode {
 .data-table tbody tr:hover { background:var(--info-blue-tint); }
 .lab-input,.filter-select { background:var(--surface-color); }
 
+/* Patrol planning uses its own labelled grid so the controls stay readable at tablet widths. */
+.patrol-controls { display:grid; grid-template-columns:minmax(160px,1.25fr) minmax(115px,.65fr) minmax(165px,1fr) minmax(145px,.9fr) auto; align-items:end; gap:12px; margin-bottom:16px; padding:18px; }
+.patrol-field { display:flex; flex-direction:column; gap:6px; min-width:0; color:var(--text-muted); font-size:11px; font-weight:700; }
+.patrol-controls .filter-select,.patrol-controls .lab-input { width:100%!important; min-width:0; min-height:40px; }
+.patrol-controls .filter-select { appearance:auto; background:#fff!important; color:#16324f!important; border:1px solid #9eb8d1!important; box-shadow:0 1px 2px rgba(20,56,92,.08); }
+.patrol-controls .filter-select option { color:#16324f; background:#fff; }
+.patrol-controls #patrol-run { min-height:40px; white-space:nowrap; }
+@media (max-width:980px) {
+  .patrol-controls { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .patrol-controls #patrol-run { width:100%; }
+}
+@media (max-width:580px) {
+  .patrol-controls { grid-template-columns:1fr; padding:14px; }
+}
+
 @media (max-width:1180px) {
   .quick-action-strip { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .sidebar { width:220px; }
@@ -2250,9 +2265,16 @@ body.dark-mode {
 .extraction-grid div { padding:8px; border-radius:6px; background:var(--surface-color); }
 .extraction-grid span { display:block; color:var(--text-muted); font-size:10px; text-transform:uppercase; letter-spacing:.06em; }
 .extraction-grid b { display:block; margin-top:3px; color:var(--text-primary); font-size:11px; overflow-wrap:anywhere; }
+.evidence-records { margin-top:2px; }
+.evidence-record { display:flex; gap:12px; padding:10px; border:1px solid var(--border-color); border-radius:8px; background:var(--surface-color); }
+.evidence-preview { width:98px; min-width:98px; height:72px; border-radius:6px; overflow:hidden; background:var(--bg-tertiary); display:grid; place-items:center; }
+.evidence-preview-image,.evidence-preview-video { width:100%; height:100%; object-fit:cover; }
+.evidence-file-icon { color:var(--accent-blue); font-size:11px; font-weight:800; letter-spacing:.08em; }
+.evidence-record-copy { min-width:0; display:flex; flex-direction:column; gap:4px; color:var(--text-muted); font-size:11px; overflow-wrap:anywhere; }
+.evidence-record-copy strong { color:var(--text-primary); font-size:12px; }
 
 @media (max-width: 900px) { .intake-grid { grid-template-columns:1fr; } .intake-handoff { align-items:flex-start; flex-direction:column; } }
-@media (max-width: 520px) { .intake-two,.extraction-grid { grid-template-columns:1fr; } }
+@media (max-width: 520px) { .intake-two,.extraction-grid { grid-template-columns:1fr; } .evidence-record { flex-direction:column; } .evidence-preview { width:100%; height:140px; } }
 .global-search-bar:focus-within {
   border-color:#3b82c4;
   box-shadow:0 0 0 4px rgba(35,112,179,.13),0 8px 24px rgba(23,61,101,.12);
@@ -2445,10 +2467,20 @@ body.dark-mode {
 }
 .scenario-number { background:#72baf3; color:#082846; }
 #search-guidance { border-radius:9px; margin-top:14px; }
+.command-query-leads { margin-top:12px; padding:12px; border:1px solid rgba(142,208,255,.42); border-radius:9px; background:rgba(6,38,66,.28); }
+.command-query-leads-head { display:flex; justify-content:space-between; align-items:baseline; gap:10px; color:#eaf6ff; font-size:12px; }
+.command-query-leads-head span { color:#b9d5e9; font-size:10px; }
+.command-query-lead-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:10px 0; }
+.command-query-lead { min-width:0; padding:9px; text-align:left; color:#dceefa; border:1px solid rgba(255,255,255,.16); border-radius:7px; background:rgba(255,255,255,.07); cursor:pointer; }
+.command-query-lead:hover { border-color:#8ed0ff; background:rgba(255,255,255,.13); }
+.command-query-lead span { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:10px; }
+.command-query-lead-no { margin-bottom:4px; color:#8ed0ff; font:600 10px 'JetBrains Mono',monospace; }
+.command-query-all-records { margin-top:0; }
 
 @media (max-width:1024px) {
   .small-map-canvas,.attention-feed { height:410px; }
   .demo-scenario-grid { grid-template-columns:repeat(2,minmax(160px,1fr)); }
+  .command-query-lead-list { grid-template-columns:1fr; }
 }
 @media (max-width:760px) {
   .global-search-bar { min-height:42px; }

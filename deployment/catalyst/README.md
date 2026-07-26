@@ -1,6 +1,6 @@
 # Deploy Drishti to Zoho Catalyst AppSail
 
-Verified development URL: https://drishtiksp-50044050051.development.catalystappsail.in
+The current development URL retains the original Catalyst app identifier. Rename and redeploy the app to change the URL.
 
 AppSail must launch the FastAPI service on the port supplied through `X_ZOHO_CATALYST_LISTEN_PORT`. Drishti already supports that contract.
 
@@ -21,7 +21,13 @@ AppSail must launch the FastAPI service on the port supplied through `X_ZOHO_CAT
 
 3. Select **AppSail**, **Catalyst-Managed Runtime**, and Python 3.11. The committed configuration uses `.appsail-build` as the deployable build path.
 
-4. The committed `app-config.json` runs `scripts/build_appsail.sh` before deployment. The script creates a clean bundle and installs Linux AMD64 Python wheels so native analytics dependencies are compatible with AppSail. Its startup command is:
+4. Build the AppSail bundle before deployment. The script creates a clean bundle and installs Linux AMD64 Python wheels so native analytics dependencies are compatible with AppSail:
+
+   ```bash
+   ./scripts/build_appsail.sh
+   ```
+
+   Its startup command is:
 
    ```text
    sh -c 'python3 -m uvicorn backend.app:app --host 0.0.0.0 --port ${X_ZOHO_CATALYST_LISTEN_PORT}'
@@ -41,9 +47,9 @@ Do not commit `.catalystrc`, access tokens, project secrets, or credentials. The
 The included `Dockerfile` is compatible with AppSail’s custom-runtime path. Catalyst requires a Linux AMD64 OCI image:
 
 ```bash
-docker build --platform linux/amd64 -t drishti-ksp:latest .
-catalyst deploy appsail --name drishti-ksp \
-  --source docker://drishti-ksp:latest \
+docker build --platform linux/amd64 -t drishti:latest .
+catalyst deploy appsail --name drishti \
+  --source docker://drishti:latest \
   --port 9000
 ```
 

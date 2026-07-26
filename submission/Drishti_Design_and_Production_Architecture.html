@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Drishti — Design & Production Architecture</title>
+  <style>
+    :root{--navy:#071d35;--blue:#1766b1;--cyan:#58b7ff;--mist:#edf6ff;--ink:#102b49;--muted:#5a738e;--line:#cfe0f0;--gold:#f5b544;--green:#0c8b67;--white:#fff}
+    *{box-sizing:border-box} body{margin:0;background:#f3f8fc;color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.55}
+    .hero{min-height:500px;padding:62px max(28px,calc((100vw - 1180px)/2));color:white;background:radial-gradient(circle at 88% 23%,#1f6baa 0 9%,#123f6c 9.2% 18%,transparent 18.2%),radial-gradient(circle at 88% 23%,transparent 0 28%,rgba(88,183,255,.18) 28.2% 28.8%,transparent 29%),linear-gradient(128deg,#061a31,#0a2c50 65%,#0e3a67);position:relative;overflow:hidden}
+    .eyebrow{color:#91d2ff;font-size:.75rem;font-weight:800;letter-spacing:.17em}.hero h1{font-size:clamp(3rem,7vw,5.9rem);line-height:.93;letter-spacing:-.055em;margin:44px 0 22px}.hero h1 span{display:block;color:#d9edff;font-size:clamp(1.8rem,3.6vw,3.2rem);letter-spacing:-.04em;margin-top:16px}.hero p{max-width:680px;margin:0;font-size:1.25rem;color:#c6def4}.live-chip{display:inline-flex;gap:10px;align-items:center;border:1px solid rgba(144,210,255,.38);padding:10px 15px;border-radius:999px;margin-top:32px;font-size:.82rem;font-weight:800;letter-spacing:.08em}.live-dot{width:8px;height:8px;background:#56d4aa;border-radius:50%;box-shadow:0 0 0 4px rgba(86,212,170,.14)}
+    main{max-width:1180px;margin:auto;padding:68px 28px 96px}.section{margin:0 0 88px}.section-label{color:var(--blue);font-size:.75rem;font-weight:900;letter-spacing:.16em}.section h2{font-size:clamp(2rem,4vw,3.1rem);letter-spacing:-.045em;line-height:1.05;margin:12px 0 18px}.lead{font-size:1.12rem;color:var(--muted);max-width:800px}.fact-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:32px}.fact{background:#fff;border:1px solid var(--line);padding:23px;border-radius:18px;box-shadow:0 10px 28px rgba(25,73,113,.05)}.fact strong{display:block;font-size:1.02rem;margin-bottom:6px}.fact p{margin:0;color:var(--muted);font-size:.94rem}
+    .diagram{background:#fff;border:1px solid var(--line);border-radius:24px;padding:34px;box-shadow:0 16px 40px rgba(22,69,110,.07);margin-top:32px;overflow:auto}.diagram h3{margin:0 0 8px;font-size:1.1rem}.diagram-note{margin:0 0 28px;color:var(--muted);font-size:.92rem}.flow{display:grid;grid-template-columns:1.15fr 38px 1.15fr 38px 1.3fr 38px 1fr;align-items:center;min-width:900px}.arrow{height:2px;background:var(--cyan);position:relative}.arrow:after{content:"";position:absolute;right:-1px;top:-4px;border-left:9px solid var(--cyan);border-top:5px solid transparent;border-bottom:5px solid transparent}.node{min-height:170px;border-radius:16px;padding:22px;border:1px solid var(--line);background:#f9fcff}.node .tag{font-size:.68rem;font-weight:900;letter-spacing:.11em;color:var(--blue)}.node h4{font-size:1.2rem;margin:10px 0 8px;line-height:1.12}.node p{margin:0;color:var(--muted);font-size:.88rem}.node.primary{background:var(--navy);border-color:var(--navy);color:white}.node.primary .tag{color:#91d2ff}.node.primary p{color:#c6def4}.node.storage{background:#eaf6ff;border-color:#b9dcf8}.node.ml{background:#fff8e7;border-color:#f3d58b}.node.guard{background:#edfbf6;border-color:#a6e4cc}
+    .architecture{display:grid;grid-template-columns:220px 36px 1fr 36px 220px;align-items:stretch;min-width:970px}.rail{display:flex;flex-direction:column;gap:14px;justify-content:center}.service{border-radius:14px;padding:16px;background:#f8fbfe;border:1px solid var(--line)}.service b{font-size:.98rem;display:block}.service span{color:var(--muted);font-size:.8rem}.core{padding:28px;border:2px solid #9bcbef;border-radius:22px;background:linear-gradient(135deg,#eff8ff,#fff)}.core-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}.core-title b{font-size:1.35rem}.core-title em{font-style:normal;background:#d8efff;color:#1463a9;padding:4px 9px;border-radius:99px;font-size:.68rem;font-weight:900;letter-spacing:.08em}.core-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.core-item{padding:15px;border-radius:12px;background:#fff;border:1px solid var(--line)}.core-item b{display:block;font-size:.95rem}.core-item span{font-size:.79rem;color:var(--muted)}.vertical-arrow{display:flex;align-items:center;justify-content:center}.vertical-arrow:before{content:"";width:2px;height:100%;background:#73c6ff}.vertical-arrow:after{content:"";margin-left:-7px;border-top:9px solid #73c6ff;border-left:5px solid transparent;border-right:5px solid transparent;transform:rotate(-90deg)}
+    .rationale{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:32px}.rationale article{background:#fff;border:1px solid var(--line);border-radius:18px;padding:25px}.rationale h3{font-size:1.18rem;margin:0 0 9px}.rationale p{color:var(--muted);margin:0}.rationale ul{padding-left:19px;margin:15px 0 0;color:var(--muted);font-size:.94rem}.rationale li+li{margin-top:7px}.accent{border-left:5px solid var(--blue)!important}.production{background:var(--navy);padding:48px;border-radius:25px;color:white;margin-top:34px}.production h3{font-size:1.7rem;margin:0 0 12px}.production p{color:#c5ddf3;max-width:850px}.production-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:25px}.production-grid div{border-top:1px solid rgba(150,211,255,.35);padding-top:13px}.production-grid b{display:block;color:#90d2ff;font-size:.77rem;letter-spacing:.1em}.production-grid span{display:block;font-size:.93rem;margin-top:7px}.callout{margin-top:32px;padding:20px 24px;border-radius:14px;background:#fff7df;border-left:5px solid var(--gold);font-size:.96rem}.callout b{color:#664600}.foot{color:var(--muted);font-size:.82rem;border-top:1px solid var(--line);padding-top:26px}
+    @media(max-width:760px){.hero{padding:42px 24px;min-height:460px}.fact-grid,.rationale,.production-grid{grid-template-columns:1fr}.diagram{padding:21px}main{padding:48px 20px}.section{margin-bottom:64px}}
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="eyebrow">RENEGADES · KSP DATATHON 2026</div>
+    <h1>DRISHTI <span>Design & production architecture</span></h1>
+    <p>An explainable intelligence workspace that turns connected FIR records, evidence and case progress into reviewable investigative and command decisions.</p>
+    <div class="live-chip"><i class="live-dot"></i> LIVE ON ZOHO CATALYST · DATA STORE CONNECTED</div>
+    <p style="margin-top:20px;font-size:.82rem;font-weight:800;letter-spacing:.08em;color:#91d2ff">TEAM RENEGADES · N P NEELESH · AKSHAYA KUMAR · CHARAN GOWDA</p>
+  </header>
+  <main>
+    <section class="section">
+      <div class="section-label">DESIGN INTENT</div>
+      <h2>One traceable view of an investigation.</h2>
+      <p class="lead">Drishti is designed around the officer’s workflow—not around isolated models. Each recommendation links back to FIR records, supporting identifiers and explicit caveats for supervisor review.</p>
+      <div class="fact-grid">
+        <article class="fact"><strong>Find relationships</strong><p>Search FIRs, people, phones, vehicles and narrative clues from a single starting point.</p></article>
+        <article class="fact"><strong>Review evidence and progress</strong><p>Bring evidence intake, incident reconstruction, lifecycle bottlenecks and quality checks into the same case context.</p></article>
+        <article class="fact"><strong>Support accountable action</strong><p>Surface explainable leads and district-scoped planning signals; officers remain responsible for validation and decisions.</p></article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-label">CURRENT PROTOTYPE</div>
+      <h2>Live Catalyst architecture.</h2>
+      <p class="lead">The deployed development prototype uses a relational Catalyst Data Store subset and an AppSail-hosted intelligence service. The interface never needs direct database credentials.</p>
+      <div class="diagram">
+        <h3>Runtime request path</h3><p class="diagram-note">The active prototype reads its relational development subset from Catalyst Data Store through the application service.</p>
+        <div class="flow">
+          <div class="node"><div class="tag">PRESENTATION</div><h4>Officer workspace</h4><p>Search, evidence intake, reconstruction, case progress, patrol planning and governance views.</p></div><div class="arrow"></div>
+          <div class="node primary"><div class="tag">CATALYST APPSAIL</div><h4>Drishti API</h4><p>FastAPI service enforces data access, runs explainable analysis and returns only the view needed by the workspace.</p></div><div class="arrow"></div>
+          <div class="node storage"><div class="tag">CATALYST DATA STORE</div><h4>Relational FIR subset</h4><p>2,000 schema-matched FIR records plus linked people, victims, arrests, chargesheets and master data.</p></div><div class="arrow"></div>
+          <div class="node guard"><div class="tag">GOVERNANCE</div><h4>Review guardrails</h4><p>Confidence displays, source-record links, audit-ready actions and synthetic-demo disclosures.</p></div>
+        </div>
+      </div>
+      <div class="callout"><b>Prototype boundary:</b> the development Data Store is intentionally a representative 2,000-FIR subset. It demonstrates Catalyst-native data access and workflows without representing operational police data.</div>
+    </section>
+
+    <section class="section">
+      <div class="section-label">PRODUCTION TARGET</div>
+      <h2>Designed to scale without moving trust into a black box.</h2>
+      <p class="lead">A production deployment separates transaction processing, analytical workloads and model operations. This keeps the officer-facing workflow responsive while preserving traceability, privacy and operational control.</p>
+      <div class="diagram">
+        <h3>Recommended production architecture</h3><p class="diagram-note">Logical service boundaries; each integration is permissioned, logged and subject to agency-approved retention controls.</p>
+        <div class="architecture">
+          <div class="rail">
+            <div class="service"><b>Officer web / mobile</b><span>Role-based workflows</span></div>
+            <div class="service"><b>FIR & evidence sources</b><span>Validated integration adapters</span></div>
+            <div class="service"><b>Command dashboards</b><span>District and state views</span></div>
+          </div>
+          <div class="vertical-arrow"></div>
+          <div class="core">
+            <div class="core-title"><b>Drishti service layer</b><em>CATALYST APPSAIL</em></div>
+            <div class="core-grid">
+              <div class="core-item"><b>Identity & role policy</b><span>Least-privilege access, agency SSO and audit context.</span></div>
+              <div class="core-item"><b>Case orchestration</b><span>FIR intake, evidence metadata, action logs and hypotheses.</span></div>
+              <div class="core-item"><b>Intelligence API</b><span>Search, link explanations, reconstruction and quality checks.</span></div>
+              <div class="core-item"><b>Command API</b><span>Lifecycle queues, district aggregates and planning signals.</span></div>
+            </div>
+          </div>
+          <div class="vertical-arrow"></div>
+          <div class="rail">
+            <div class="service"><b>Catalyst Data Store</b><span>Operational records & metadata</span></div>
+            <div class="service"><b>Secure object store</b><span>Media, documents, retention policy</span></div>
+            <div class="service"><b>Analytics store</b><span>De-identified aggregates & feature sets</span></div>
+            <div class="service"><b>QuickML / model service</b><span>Versioned models & monitored endpoints</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="production">
+        <h3>Production operating principles</h3>
+        <p>Operational systems remain the source of truth. Analytics and ML are isolated, versioned and measurable; they generate review priorities—not autonomous enforcement decisions.</p>
+        <div class="production-grid">
+          <div><b>01 · PERFORMANCE</b><span>Cache read-heavy district aggregates; run costly graph and forecast refreshes asynchronously.</span></div>
+          <div><b>02 · DATA CONTROL</b><span>Store media separately from metadata; enforce retention, encryption and access policy by case role.</span></div>
+          <div><b>03 · MLOPS</b><span>Train from approved feature sets, publish versioned endpoints, monitor drift and retain evaluation evidence.</span></div>
+          <div><b>04 · ACCOUNTABILITY</b><span>Log source records, confidence, human overrides and final action for every material recommendation.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-label">ARCHITECTURE RATIONALE</div>
+      <h2>Why this design is appropriate for police intelligence.</h2>
+      <div class="rationale">
+        <article class="accent"><h3>Fast workspaces, controlled data</h3><p>AppSail gives the team a single governed service boundary. The user interface calls APIs, while Data Store access remains server-side and policy-controlled.</p></article>
+        <article><h3>Relational truth before derived intelligence</h3><p>FIR, person, vehicle, arrest and chargesheet relationships remain structured and queryable. Derived links must always point back to those source records.</p></article>
+        <article><h3>Analytics that do not block operations</h3><p>Heavy computations are moved to scheduled or event-driven jobs in production. The case workspace reads prepared features and aggregates rather than re-training models on every request.</p></article>
+        <article><h3>ML as decision support</h3><p>Production models should use approved features, documented evaluation and versioned endpoints. Confidence must be visible; outputs are never treated as proof or automatic action.</p></article>
+      </div>
+    </section>
+    <footer class="foot"><strong>TEAM RENEGADES</strong> · N P Neelesh · Akshaya Kumar · Charan Gowda<br><br>Drishti prototype architecture · Zoho Catalyst AppSail + Catalyst Data Store · Public demo uses a development subset and synthetic demonstration scenarios only.</footer>
+  </main>
+</body>
+</html>

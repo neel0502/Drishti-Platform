@@ -1,9 +1,7 @@
 // DRISHTI APPLICATION CONTROLLER - FRONTEND
 
 // Use the backend served by the same host in local and Catalyst deployments.
-const API_BASE = window.location.protocol === "file:"
-  ? "https://drishtiksp-50044068191.development.catalystappsail.in/api"
-  : "/api";
+const API_BASE = "/api";
 
 // State variables
 let activePanel = "home";
@@ -25,7 +23,9 @@ let profileLoaded = false;
 let currentProfile = null;
 let mockFir = null;
 let mockExtraction = null;
+let evidencePreviewUrl = null;
 let syntheticScenario = null;
+let drilldownLoaded = false;
 
 // DOM Ready
 document.addEventListener("DOMContentLoaded", () => {
@@ -38,9 +38,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initReconstruction();
   initAnalyticsLabs();
   initRoleWorkspaces();
-  initMockIntake();
   initResponsiveShell();
-  loadDemoScenarios();
   
   // Catalyst can cold-start before the analytics data is ready. Wait for
   // readiness so the first page load populates without a manual refresh.
@@ -145,7 +143,7 @@ function initMockIntake() {
 
   classifyButton.addEventListener("click", async () => {
     const narrative = document.getElementById("mock-narrative").value.trim();
-    classificationResult.textContent = "Analysing FIR narrative against historic KSP offence labels…";
+    classificationResult.textContent = "Analysing FIR narrative against historic offence labels…";
     try {
       const response = await fetch(`${API_BASE}/fir-classification`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({narrative}) });
       const result = await response.json();
@@ -195,20 +193,44 @@ function initMockIntake() {
     }
   });
 
-  evidenceForm.addEventListener("submit", event => {
+  evidenceForm.addEventListener("submit", async event => {
     event.preventDefault();
     const file = document.getElementById("mock-evidence-file").files[0];
+    const evidenceType = document.getElementById("mock-evidence-type").value;
     const sampleText = document.getElementById("mock-evidence-text").value.trim();
+    const status = document.getElementById("mock-evidence-status");
+    if (!file) {
+      status.textContent = "Choose an image, video, PDF, text file, or document before uploading.";
+      return;
+    }
+    status.textContent = `Uploading ${file.name} to temporary development storage…`;
+    let evidenceRecord;
+    try {
+      const params = new URLSearchParams({ category:evidenceType, source:"station_intake" });
+      if (mockFir?.caseId) params.set("caseId", mockFir.caseId);
+      if (sampleText) params.set("note", sampleText);
+      const response = await fetch(`${API_BASE}/evidence?${params}`, {
+        method:"POST",
+        headers:{ "Content-Type": file.type || "application/octet-stream", "X-Evidence-Filename": encodeURIComponent(file.name) },
+        body:file
+      });
+      evidenceRecord = await response.json();
+      if (!response.ok) throw new Error(evidenceRecord.detail || "Evidence upload failed");
+    } catch (error) {
+      status.textContent = `Evidence was not uploaded: ${error.message}`;
+      return;
+    }
     const source = [sampleText, mockFir?.narrative || ""].filter(Boolean).join(" ");
     const phones = [...new Set(source.match(/(?:\+91[-\s]?)?[6-9]\d{4}[-\s]?\d{5}/g) || [])];
     const vehicles = [...new Set(source.match(/\b(?:KA|MH|DL|TN)-?\d{2}[ -]?[A-Z]{1,3}[ -]?\d{3,4}\b/gi) || [])];
     const time = source.match(/\b(?:[01]?\d|2[0-3])(?::[0-5]\d)?\s?(?:AM|PM)\b/i)?.[0];
     const location = mockFir?.location || (source.match(/near\s+([^,.]+)/i)?.[1]);
-    mockExtraction = { phones, vehicles, time, location, fileName: file?.name || "Pasted sample note" };
-    document.getElementById("mock-evidence-status").textContent = `Sample extraction complete from ${mockExtraction.fileName}. No file was sent outside this browser.`;
+    mockExtraction = { phones, vehicles, time, location, fileName:file.name, evidenceId:evidenceRecord.id };
+    status.textContent = `Evidence ${evidenceRecord.id} stored in temporary development storage. It is linked to ${mockFir ? `development FIR ${mockFir.id}` : "this intake session"} and is not production evidence.`;
+    renderEvidenceRecord(file, evidenceRecord);
     const results = document.getElementById("mock-extraction-results");
     results.classList.remove("empty-state-detail");
-    results.innerHTML = `<strong>Extracted investigation leads</strong><div class="extraction-grid"><div><span>Phone identifiers</span><b>${phones.length ? phones.map(escapeLab).join(", ") : "None found"}</b></div><div><span>Vehicle identifiers</span><b>${vehicles.length ? vehicles.map(escapeLab).join(", ") : "None found"}</b></div><div><span>Time clue</span><b>${escapeLab(time || "Not stated")}</b></div><div><span>Location clue</span><b>${escapeLab(location || "Not stated")}</b></div></div><p>API handoff ready: entity extraction, similarity search, and evidence-gap assessment.</p>`;
+    results.innerHTML = `<strong>Contextual-note lead extraction</strong><div class="extraction-grid"><div><span>Phone identifiers</span><b>${phones.length ? phones.map(escapeLab).join(", ") : "None found"}</b></div><div><span>Vehicle identifiers</span><b>${vehicles.length ? vehicles.map(escapeLab).join(", ") : "None found"}</b></div><div><span>Time clue</span><b>${escapeLab(time || "Not stated")}</b></div><div><span>Location clue</span><b>${escapeLab(location || "Not stated")}</b></div></div><p>Only the officer-entered note and FIR narrative were parsed. Media content requires authorized forensic review before it can support an investigative conclusion.</p>`;
     refreshMockHandoff();
   });
 
@@ -217,6 +239,25 @@ function initMockIntake() {
     fillSearch(lead);
   });
   reconstructionButton.addEventListener("click", () => triggerNav("reconstruction"));
+}
+
+function renderEvidenceRecord(file, record) {
+  const container = document.getElementById("mock-evidence-records");
+  if (evidencePreviewUrl) URL.revokeObjectURL(evidencePreviewUrl);
+  evidencePreviewUrl = URL.createObjectURL(file);
+  const preview = file.type.startsWith("image/")
+    ? `<img class="evidence-preview-image" src="${evidencePreviewUrl}" alt="Local preview of ${escapeLab(file.name)}">`
+    : file.type.startsWith("video/")
+      ? `<video class="evidence-preview-video" src="${evidencePreviewUrl}" controls preload="metadata"></video>`
+      : `<div class="evidence-file-icon">${file.type === "application/pdf" ? "PDF" : "FILE"}</div>`;
+  container.classList.remove("empty-state-detail");
+  container.innerHTML = `<article class="evidence-record"><div class="evidence-preview">${preview}</div><div class="evidence-record-copy"><strong>${escapeLab(record.fileName)}</strong><span>${escapeLab(record.categoryLabel)} · ${escapeLab(record.mimeType)} · ${formatLabBytes(record.sizeBytes)}</span><span>Evidence ID ${escapeLab(record.id)} · SHA-256 ${escapeLab(record.sha256Short)}</span><span>${escapeLab(record.storageNotice)}</span></div></article>`;
+}
+
+function formatLabBytes(value) {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 async function runSyntheticValidation() {
@@ -346,6 +387,11 @@ async function initializeDashboardData() {
     fetchNetworkGroups()
   ]);
   await initContextSelectors();
+  // Load secondary workspaces only after the command view is usable. This
+  // avoids a cold AppSail start being multiplied by hidden-panel requests.
+  initMockIntake();
+  loadDemoScenarios();
+  loadHypothesisBoards();
 }
 
 // ─── ANALYTICS LABS ──────────────────────────────────────────────────────
@@ -377,7 +423,6 @@ function initAnalyticsLabs() {
   document.getElementById("forecast-run").addEventListener("click", runForecastBacktest);
   document.getElementById("ai-refresh").addEventListener("click", runAIConfidence);
   document.getElementById("hypothesis-form").addEventListener("submit", saveHypothesisBoard);
-  loadHypothesisBoards();
 }
 
 const labLoaded = new Set();
@@ -460,12 +505,14 @@ async function runLifecycleAnalysis() {
 
 async function runPatrolPlan() {
   const button = document.getElementById("patrol-run"); const district = document.getElementById("patrol-district").value || "1"; const units = document.getElementById("patrol-units").value;
-  const heinous = document.getElementById("patrol-heinous").value; const recency = document.getElementById("patrol-recency").value; const [shiftStart, shiftEnd] = document.getElementById("patrol-shift").value.split('-');
+  const focus = document.getElementById("patrol-focus").value;
+  const focusSettings = { balanced: { heinous: 1.5, recency: 0.75 }, recent: { heinous: 1, recency: 2 }, serious: { heinous: 2.5, recency: 0.5 } };
+  const { heinous, recency } = focusSettings[focus] || focusSettings.balanced; const [shiftStart, shiftEnd] = document.getElementById("patrol-shift").value.split('-');
   try {
     const data = await fetchLab(`/patrol/plan?districtId=${district}&availableUnits=${units}&heinousWeight=${heinous}&recencyWeight=${recency}&shiftStart=${shiftStart}&shiftEnd=${shiftEnd}`, button);
-    document.getElementById("patrol-window").textContent = `${data.analysisWindow.from} to ${data.analysisWindow.to}`;
-    document.getElementById("patrol-summary").innerHTML = `<div class="metric-card"><div class="value">${data.availableUnits}</div><div class="label">Units allocated</div></div><div class="metric-card"><div class="value">${data.coverageIndex}%</div><div class="label">Scenario demand coverage</div></div><div class="metric-card"><div class="value">${data.baselineCoverageIndex}%</div><div class="label">Default-weight baseline</div></div><div class="metric-card ${data.coverageDelta < 0 ? 'alert':''}"><div class="value">${data.coverageDelta > 0 ? '+':''}${data.coverageDelta} pts</div><div class="label">Coverage change</div></div><div class="metric-card"><div class="value">${data.zones.filter(z => z.allocatedUnits > 0).length}</div><div class="label">Staffed priority zones</div></div>`;
-    document.getElementById("patrol-note").className = "analysis-note warning"; document.getElementById("patrol-note").innerHTML = `${escapeLab(data.method)}<br><strong>${escapeLab(data.caveat)}</strong>`;
+    document.getElementById("patrol-window").textContent = `${data.coordinateScope.label} · ${data.analysisWindow.from} to ${data.analysisWindow.to}`;
+    document.getElementById("patrol-summary").innerHTML = `<div class="metric-card"><div class="value">${data.availableUnits}</div><div class="label">Teams allocated</div></div><div class="metric-card"><div class="value">${data.coverageIndex}%</div><div class="label">Historical demand covered</div></div><div class="metric-card"><div class="value">${data.baselineCoverageIndex}%</div><div class="label">Balanced plan reference</div></div><div class="metric-card ${data.coverageDelta < 0 ? 'alert':''}"><div class="value">${data.coverageDelta > 0 ? '+':''}${data.coverageDelta} pts</div><div class="label">Change from balanced plan</div></div><div class="metric-card"><div class="value">${data.zones.filter(z => z.allocatedUnits > 0).length}</div><div class="label">Priority zones staffed</div></div>`;
+    document.getElementById("patrol-note").className = "analysis-note warning"; document.getElementById("patrol-note").innerHTML = `<strong>Map scope: ${escapeLab(data.coordinateScope.label)}</strong> · ${data.coordinateScope.accepted.toLocaleString()} valid FIR coordinates used${data.coordinateScope.excludedOutsideBoundary ? `; ${data.coordinateScope.excludedOutsideBoundary.toLocaleString()} out-of-boundary coordinates excluded` : ''}.<br>${escapeLab(data.method)}<br><strong>${escapeLab(data.caveat)}</strong>`;
     document.getElementById("patrol-zones").innerHTML = data.zones.map(zone => `<article class="cluster-card ${zone.allocatedUnits ? '' : 'zone-card-zero'}"><div class="cluster-head"><h3>${zone.zone} · ${escapeLab(zone.topCrime)}</h3><span class="cluster-score">${zone.allocatedUnits} unit${zone.allocatedUnits === 1 ? '' : 's'}</span></div><div class="funnel-label">Peak ${escapeLab(zone.peakWindow)} · score ${zone.riskScore}</div><p style="margin-top:8px;color:var(--text-secondary);font-size:11px">${escapeLab(zone.rationale)}</p></article>`).join('');
     window.setTimeout(() => {
       try { renderPatrolMap(data.zones); } catch (mapError) { console.warn('Patrol map could not render', mapError); }
@@ -575,15 +622,14 @@ function initNavigation() {
       
       activePanel = target;
       updateWorkspaceHeader(target);
-      if (!labLoaded.has(target)) {
-        labLoaded.add(target);
-        if (target === "patterns") runPatternDiscovery();
-        else if (target === "lifecycle") runLifecycleAnalysis();
-        else if (target === "patrol") runPatrolPlan();
-        else if (target === "quality") runQualityAudit();
-        else if (target === "forecast") runForecastBacktest();
-        else if (target === "ai") runAIConfidence();
+      if (target === "drilldown" && !drilldownLoaded) {
+        drilldownLoaded = true;
+        loadDistrictDrilldown(document.getElementById("select-drilldown-district").value || 3);
       }
+      // Analytics workspaces are intentionally on-demand. Re-training models
+      // while merely opening a panel made navigation feel stalled on AppSail;
+      // the visible action button starts the calculation when the officer is
+      // ready to review it.
       
       // Resize/reinitialize maps & graphs on transition to ensure correct dimensions
       setTimeout(() => {
@@ -1153,9 +1199,16 @@ function initCommandQueryAssistant() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Command query unavailable");
       const suspects = (data.suspects || []).map(person => `<span>${escapeLab(person.name)} · ${person.caseCount} FIRs · ${person.districtCount} districts</span>`).join("");
-      result.innerHTML = `<strong>${escapeLab(data.answer)}</strong><div>${escapeLab(data.scope)}</div>${data.languageMode === "Kannada-assisted" ? `<div class="command-query-meta">Kannada query interpreted as: ${escapeLab(data.interpretedQuery)}</div>` : ""}${suspects ? `<div class="command-query-suspects">${suspects}</div>` : ""}<div class="command-query-meta">Recommended action: ${escapeLab(data.recommendedAction)}<br>${escapeLab(data.method)}</div>`;
+      const previewCases = (data.cases || []).slice(0, 3);
+      const leadPreview = previewCases.length ? `<section class="command-query-leads" aria-label="Priority FIR leads"><div class="command-query-leads-head"><strong>Priority FIR leads</strong><span>Showing ${previewCases.length} of ${(data.cases || []).length} validated records</span></div><div class="command-query-lead-list">${previewCases.map(item => `<button type="button" class="command-query-lead" data-case-id="${escapeLab(item.id)}"><span class="command-query-lead-no">FIR ${escapeLab(item.crimeNo)}</span><span>${escapeLab(item.type)} · ${escapeLab(item.district)} · ${escapeLab(item.date)}</span></button>`).join("")}</div><button class="btn btn-secondary btn-sm command-query-all-records" type="button" data-open-case-results>View ${(data.cases || []).length} reviewed FIR records</button></section>` : "";
+      result.innerHTML = `<strong>${escapeLab(data.answer)}</strong><div>${escapeLab(data.scope)}</div>${data.languageMode === "Kannada-assisted" ? `<div class="command-query-meta">Kannada query interpreted as: ${escapeLab(data.interpretedQuery)}</div>` : ""}${suspects ? `<div class="command-query-suspects">${suspects}</div>` : ""}${leadPreview}<div class="command-query-meta">Recommended action: ${escapeLab(data.recommendedAction)}<br>${escapeLab(data.method)}</div>`;
       renderSearchResults({ people: [], phones: [], vehicles: [], cases: data.cases || [] });
       document.getElementById("search-guidance").textContent = "Command query results are shown below. Review the stated filters before acting on any intelligence.";
+      result.querySelectorAll("[data-case-id]").forEach(button => button.addEventListener("click", () => loadIncidentReconstruction(button.dataset.caseId)));
+      result.querySelector("[data-open-case-results]")?.addEventListener("click", () => document.getElementById("section-cases")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      // A scenario should end at the decision-ready briefing, rather than make a
+      // reviewer hunt below the demo cards for the outcome.
+      result.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (error) {
       result.innerHTML = `<strong>Query could not be completed</strong><span>${escapeLab(error.message)}</span>`;
     }
@@ -2135,8 +2188,7 @@ function initDistrictDrilldown() {
     loadDistrictDrilldown(e.target.value);
   });
   
-  // Load default district (Mysuru id=3)
-  loadDistrictDrilldown(3);
+  // District details load when the workspace is opened or the district changes.
 }
 
 async function loadDistrictDrilldown(districtId) {

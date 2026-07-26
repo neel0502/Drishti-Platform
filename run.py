@@ -30,7 +30,7 @@ def run():
     reload_enabled = os.getenv("DRISHTI_RELOAD", "true").lower() == "true"
     
     print("\n" + "="*50)
-    print("  DRISHTI — KSP SCRB INTELLIGENCE PLATFORM")
+    print("  DRISHTI — CRIME INTELLIGENCE PLATFORM")
     print("="*50)
     print("  Starting local server...")
     print(f"  API Base Address:   http://{host}:{port}/api")

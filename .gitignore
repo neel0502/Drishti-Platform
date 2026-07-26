@@ -30,10 +30,11 @@ generate_data.py
 .appsail-build/
 .catalyst-migration/
 catalyst-debug.log
+.tmp/
+*.inspect.ndjson
 tmp/pdfs/
 deployment/catalyst/iac/generated/
 export_*.zip
-
 
 
 

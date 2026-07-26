@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Drishti — Karnataka State Police Intelligence Platform</title>
+  <title>Drishti — Crime Intelligence Platform</title>
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -15,7 +15,7 @@
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="index.css?v=20260724-ui-cleanup">
+  <link rel="stylesheet" href="index.css?v=20260726-patrol-layout">
 </head>
 <body>
 
@@ -33,7 +33,7 @@
           </svg>
           <span class="logo-text">DRISHTI</span>
         </div>
-        <div class="sub-logo">Karnataka State Police</div>
+        <div class="sub-logo">Crime Intelligence Platform</div>
       </div>
       <div class="role-switcher">
         <label for="role-select">Operational workspace</label>
@@ -698,8 +698,8 @@
         </section>
 
         <section class="content-panel" id="patrol-panel">
-          <div class="lab-hero"><div><span class="eyebrow">RESOURCE SCENARIO</span><h2>Patrol and resource planning</h2><p>Allocate a limited number of patrol units against recent, weighted incident demand.</p></div><div class="method-chip amber">Supervisor approval required</div></div>
-          <div class="panel-card lab-controls"><select id="patrol-district" class="filter-select"></select><label class="unit-label">Units <input id="patrol-units" class="lab-input short" type="number" min="1" max="50" value="8"></label><label class="unit-label">Heinous weight <input id="patrol-heinous" class="lab-input short" type="number" min="0" max="5" step="0.25" value="1.5"></label><label class="unit-label">Recency weight <input id="patrol-recency" class="lab-input short" type="number" min="0" max="5" step="0.25" value="0.75"></label><label class="unit-label">Shift <select id="patrol-shift" class="filter-select"><option value="0-23">Full day</option><option value="6-14">06:00–14:00</option><option value="14-22">14:00–22:00</option><option value="22-6">22:00–06:00</option></select></label><button id="patrol-run" class="btn btn-primary">Compare scenario</button></div>
+          <div class="lab-hero"><div><span class="eyebrow">RESOURCE SCENARIO</span><h2>Patrol and resource planning</h2><p>Use recent FIR history to suggest where available patrol teams may be placed.</p></div><div class="method-chip amber">Supervisor approval required</div></div>
+          <div class="panel-card patrol-controls"><label class="patrol-field">District <select id="patrol-district" class="filter-select"></select></label><label class="patrol-field">Available teams <input id="patrol-units" class="lab-input" type="number" min="1" max="50" value="8"></label><label class="patrol-field">Deployment focus <select id="patrol-focus" class="filter-select"><option value="balanced">Balanced plan</option><option value="recent">Recent activity</option><option value="serious">Serious offences</option></select></label><label class="patrol-field">Shift <select id="patrol-shift" class="filter-select"><option value="0-23">Full day</option><option value="6-14">06:00–14:00</option><option value="14-22">14:00–22:00</option><option value="22-6">22:00–06:00</option></select></label><button id="patrol-run" class="btn btn-primary">Plan deployment</button></div>
           <div class="columns-grid"><div class="grid-col col-60"><div class="panel-card"><div class="card-header"><h3>Priority deployment zones</h3><span id="patrol-window" class="header-muted-label"></span></div><div id="patrol-map" class="planning-map"></div></div></div><div class="grid-col col-40"><div id="patrol-summary" class="metric-grid vertical"></div><div id="patrol-note" class="analysis-note"></div></div></div>
           <div id="patrol-zones" class="lab-grid compact"></div>
         </section>
@@ -712,13 +712,13 @@
         </section>
 
         <section class="content-panel" id="intake-panel">
-          <div class="lab-hero"><div><span class="eyebrow">STATION WORKSPACE</span><h2>Development FIR Registration & Evidence Intake</h2><p>Register a schema-mapped FIR in the Catalyst Development Data Store, then extract actionable identifiers from a sample evidence document.</p></div><div class="method-chip">Development records only</div></div>
-          <div class="demo-safety-note"><strong>Development environment.</strong> FIRs created here are written only to the Drishti Catalyst Development Data Store. They are not submitted to Karnataka Police production systems. Production use requires authorised police APIs, access controls, audit trails, and retention approval.</div>
+          <div class="lab-hero"><div><span class="eyebrow">STATION WORKSPACE</span><h2>Development FIR Registration & Evidence Intake</h2><p>Register a schema-mapped FIR, then attach a development CCTV export, image, video, or document with a traceable evidence record.</p></div><div class="method-chip">Development records only</div></div>
+          <div class="demo-safety-note"><strong>Development environment.</strong> FIRs created here are written only to the Drishti Catalyst Development Data Store. They are not submitted to production systems. Production use requires authorised APIs, access controls, audit trails, and retention approval.</div>
           <div class="intake-grid">
             <form id="mock-fir-form" class="panel-card intake-form">
               <div class="card-header"><h3>Register Development FIR</h3><span class="header-muted-label">Station Officer</span></div>
               <label>Complainant<input id="mock-complainant" class="lab-input" required placeholder="e.g. Ananya Rao"></label>
-              <label>Offence category<select id="mock-offence" class="lab-input" required><option value="">Loading KSP offences…</option></select></label>
+              <label>Offence category<select id="mock-offence" class="lab-input" required><option value="">Loading offence categories…</option></select></label>
               <div class="intake-two"><label>Police station<select id="mock-station" class="lab-input" required><option value="">Loading stations…</option></select></label><label>Registering officer<select id="mock-officer" class="lab-input" required><option value="">Loading officers…</option></select></label></div>
               <div class="intake-two"><label>Incident date & time<input id="mock-incident-time" class="lab-input" type="datetime-local" required></label><label>Location<input id="mock-location" class="lab-input" required placeholder="Indiranagar Metro Station"></label></div>
               <div class="intake-two"><label>Latitude<input id="mock-latitude" class="lab-input" type="number" step="any" value="12.9784" required></label><label>Longitude<input id="mock-longitude" class="lab-input" type="number" step="any" value="77.6408" required></label></div>
@@ -728,11 +728,13 @@
               <button class="btn btn-primary" type="submit">Create Development FIR</button><div id="mock-fir-status" class="header-muted-label"></div>
             </form>
             <form id="mock-evidence-form" class="panel-card intake-form">
-              <div class="card-header"><h3>Analyse sample evidence</h3><span class="header-muted-label">API-ready connector</span></div>
-              <label>Sample document<input id="mock-evidence-file" class="lab-input" type="file" accept=".pdf,.txt,.doc,.docx,image/*"></label>
-              <label>Demo document text<textarea id="mock-evidence-text" class="lab-input lab-textarea" placeholder="Paste a sample witness/CCTV note. Try: Black Pulsar KA-05 MX 1234, phone 98450-12345, observed near Indiranagar at 8:00 PM."></textarea></label>
-              <button class="btn btn-secondary" type="submit">Run sample extraction</button><div id="mock-evidence-status" class="header-muted-label"></div>
-              <div id="mock-extraction-results" class="extraction-results empty-state-detail">Upload a sample document or paste a note to inspect extractable entities.</div>
+              <div class="card-header"><h3>Upload development evidence</h3><span class="header-muted-label">Temporary app storage</span></div>
+              <label>Evidence type<select id="mock-evidence-type" class="lab-input"><option value="cctv_export">CCTV export</option><option value="scene_image">Scene image</option><option value="body_camera">Body-camera clip</option><option value="document">Document or statement</option><option value="digital_artifact">Digital artifact</option></select></label>
+              <label>Evidence file<input id="mock-evidence-file" class="lab-input" type="file" accept="image/*,video/mp4,video/webm,video/quicktime,.pdf,.txt,.doc,.docx" required></label>
+              <label>Contextual note (optional)<textarea id="mock-evidence-text" class="lab-input lab-textarea" placeholder="Record a verified observation, e.g. Black Pulsar KA-05 MX 1234 observed near Indiranagar at 8:00 PM."></textarea></label>
+              <button class="btn btn-secondary" type="submit">Upload evidence &amp; extract note leads</button><div id="mock-evidence-status" class="header-muted-label"></div>
+              <div id="mock-evidence-records" class="evidence-records empty-state-detail">No development evidence uploaded in this browser session.</div>
+              <div id="mock-extraction-results" class="extraction-results empty-state-detail">Upload a file to create an evidence record. Lead extraction uses the contextual note and FIR narrative; it does not infer facts from video or images.</div>
             </form>
           </div>
           <div class="panel-card intake-handoff"><div><span class="eyebrow">NEXT STEP</span><h3>Investigation handoff</h3><p id="mock-handoff-copy">Register a development FIR and extract a lead to generate a traceable investigation handoff.</p></div><div class="intake-actions"><button id="mock-open-search" class="btn btn-secondary" type="button" disabled>Search linked intelligence</button><button id="mock-open-reconstruction" class="btn btn-primary" type="button" disabled>Open reconstruction workspace</button></div></div>
@@ -777,6 +779,6 @@
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <!-- Application logic -->
-  <script src="index.js?v=20260725-trendcontext"></script>
+  <script src="index.js?v=20260725-fast-start"></script>
 </body>
 </html>

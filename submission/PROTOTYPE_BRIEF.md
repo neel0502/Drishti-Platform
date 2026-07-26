@@ -2,7 +2,7 @@
 
 ## Challenge
 
-Karnataka State Police Datathon 2026 — Challenge 2: AI-Driven Crime Analytics & Visualization Platform.
+AI-Driven Crime Analytics & Visualization Platform.
 
 ## Problem
 
