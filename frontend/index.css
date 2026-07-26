@@ -2375,6 +2375,9 @@ body.dark-mode {
 
 .columns-grid { align-items:stretch; }
 .columns-grid > .grid-col > .panel-card { height:100%; }
+/* Profile detail cards must follow their content height; otherwise the MO card
+   stretches to match the tall movement-map column and leaves a blank slab. */
+#profile-panel .columns-grid > .grid-col > .panel-card { height:auto; }
 .small-map-canvas { height:500px; border-radius:10px; }
 .attention-feed { height:500px; padding-right:5px; }
 .map-card-container { padding:10px; overflow:hidden; }
