@@ -1606,6 +1606,13 @@ button {
   gap: 12px;
 }
 
+/* Replaces the fixed-height centred placeholder after an FIR briefing loads. */
+.ai-fir-brief-content { min-height: 0; width: 100%; }
+.ai-fir-brief-content .details-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
+.ai-fir-brief-content .details-item { padding:10px 12px; border:1px solid var(--border-color); border-radius:8px; background:var(--surface-raised); }
+.ai-fir-brief-content .details-label { font-size:11px; font-weight:700; color:var(--text-muted); }
+.ai-fir-brief-content .details-value { font-size:14px; color:var(--text-primary); }
+
 /* SCREEN 7: DISTRICT DRILL DOWN */
 .drilldown-header-card {
   background-color: var(--surface-raised);
