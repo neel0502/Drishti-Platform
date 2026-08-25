@@ -1,3 +1,5 @@
+import json
+
 import backend.app as analytics
 from backend import catalyst_store
 
@@ -112,6 +114,90 @@ def test_operational_action_is_audited_with_human_status():
     assert result["actionId"] == 1
     assert result["status"] == "pending human review"
     assert analytics.get_operational_actions(50005)["actions"][0]["rationale"] == request.rationale
+
+
+def test_investigation_tasks_are_reconstructed_from_append_only_events():
+    from fastapi import HTTPException
+    analytics.operational_action_log.clear()
+    created = analytics.create_investigation_task(analytics.InvestigationTaskRequest(
+        caseId=50005, title="Verify CCTV collection", detail="Confirm collection time, source camera, and custody metadata.",
+        owner="Inspector R. Sharma", dueDate="2026-08-28", priority="high", sourceIds=["C2"],
+        agentId="evidence-gap", agentRunId="AGT-TEST", createdBy="Inspector R. Sharma",
+    ))
+    assert created["status"] == "open"
+    tasks = analytics.get_investigation_tasks(caseId=50005)["tasks"]
+    assert tasks[0]["taskId"] == created["taskId"]
+    try:
+        analytics.update_investigation_task(created["taskId"], analytics.TaskStatusRequest(
+            status="completed", officer="Inspector R. Sharma", role="station", note="Done",
+        ))
+    except HTTPException as error:
+        assert error.status_code == 403
+    else:
+        raise AssertionError("Station role must not complete a supervisor-controlled task")
+    analytics.update_investigation_task(created["taskId"], analytics.TaskStatusRequest(
+        status="in_progress", officer="Inspector R. Sharma", role="station", note="Work started",
+    ))
+    analytics.update_investigation_task(created["taskId"], analytics.TaskStatusRequest(
+        status="awaiting_supervisor", officer="Inspector R. Sharma", role="station", note="Evidence attached",
+    ))
+    analytics.update_investigation_task(created["taskId"], analytics.TaskStatusRequest(
+        status="completed", officer="SP A. Kumar", role="district", note="Sources verified",
+    ))
+    completed = analytics.get_investigation_tasks(caseId=50005)["tasks"][0]
+    assert completed["status"] == "completed"
+    assert len(completed["history"]) == 3
+
+
+def test_agent_task_requires_citation_and_task_state_cannot_skip_handoff():
+    from fastapi import HTTPException
+    analytics.operational_action_log.clear()
+    try:
+        analytics.create_investigation_task(analytics.InvestigationTaskRequest(
+            caseId=50005, title="Verify case link", detail="Compare both source FIRs before coordination.",
+            owner="Inspector R. Sharma", dueDate="2026-08-28", agentId="linked-case-verification",
+        ))
+    except HTTPException as error:
+        assert error.status_code == 422
+    else:
+        raise AssertionError("Agent-suggested work must retain a source citation")
+
+    created = analytics.create_investigation_task(analytics.InvestigationTaskRequest(
+        caseId=50005, title="Verify case link", detail="Compare both source FIRs before coordination.",
+        owner="Inspector R. Sharma", dueDate="2026-08-28", agentId="linked-case-verification",
+        sourceIds=["C3"],
+    ))
+    try:
+        analytics.update_investigation_task(created["taskId"], analytics.TaskStatusRequest(
+            status="awaiting_supervisor", officer="Inspector R. Sharma", role="station",
+        ))
+    except HTTPException as error:
+        assert error.status_code == 409
+    else:
+        raise AssertionError("Task handoff must not skip the in-progress state")
+
+
+def test_evidence_custody_requires_supervisor_verification():
+    from fastapi import HTTPException
+    analytics.operational_action_log.clear()
+    evidence = {
+        "id": "DEV-EV-TEST", "caseId": 50005, "fileName": "test.pdf", "receivedAt": "2026-08-25T10:00:00+00:00",
+        "sha256": "abc", "custodyStatus": "received", "humanVerified": False,
+    }
+    analytics._append_workflow_event("evidence-created", 50005, evidence, "received")
+    try:
+        analytics.verify_evidence_custody("DEV-EV-TEST", analytics.EvidenceVerificationRequest(
+            officer="Inspector", role="station", status="verified",
+        ))
+    except HTTPException as error:
+        assert error.status_code == 403
+    else:
+        raise AssertionError("Station role must not verify custody")
+    result = analytics.verify_evidence_custody("DEV-EV-TEST", analytics.EvidenceVerificationRequest(
+        officer="SP A. Kumar", role="district", status="verified", note="Checksum and seal checked",
+    ))
+    assert result["status"] == "verified"
+    assert analytics.list_development_evidence(50005)["records"][0]["humanVerified"] is True
 
 
 def test_pattern_lab_discovers_clusters_with_linked_cases():
@@ -233,6 +319,79 @@ def test_reconstruction_selector_returns_loadable_cases():
     payload = analytics.build_incident_reconstruction(options[0]["caseId"])
     assert payload["case"]["caseId"] == options[0]["caseId"]
     assert payload["events"]
+
+
+def test_investigation_agent_returns_cited_human_review_draft():
+    analytics.agent_run_log.clear()
+    result = analytics.run_investigation_agent(analytics.InvestigationAgentRequest(
+        caseId=50005,
+        role="district",
+        query="What evidence should be verified before district coordination?",
+    ))
+
+    assert result["run"]["runId"].startswith("AGT-")
+    assert result["citations"]
+    assert [stage["id"] for stage in result["stages"]] == ["scout", "skeptic", "commander"]
+    assert result["claims"]
+    assert all(claim["supportingSourceIds"] for claim in result["claims"])
+    assert len(result["skepticReviews"]) == len(result["claims"])
+    assert result["recommendedActions"]
+    assert result["actionDraft"]["approved"] is False
+    assert all(action["requiresHumanApproval"] for action in result["recommendedActions"])
+    assert result["run"]["auditHash"]
+    assert result["privacy"]["mode"] == "minimum necessary output"
+    assert result["model"]["provider"] in {"openai", "deterministic-fallback"}
+    assert "totalTokens" in result["model"]["tokenUsage"]
+
+
+def test_agent_output_masks_direct_identifiers_and_chains_audit_runs():
+    analytics.agent_run_log.clear()
+    masked = analytics.redact_agent_text("Call 9845012345 using KA-05 MX 1234")
+    assert "9845012345" not in masked
+    assert "KA-05 MX 1234" not in masked
+    first = analytics.run_investigation_agent(analytics.InvestigationAgentRequest(
+        caseId=50005, role="analyst", query="Review the evidence and prepare a cited verification plan.",
+    ))
+    second = analytics.run_investigation_agent(analytics.InvestigationAgentRequest(
+        caseId=50005, role="analyst", query="Challenge the prior plan against missing evidence.",
+    ))
+    private_names = analytics.df_accused[analytics.df_accused["CaseMasterID"] == 50005]["AccusedName"].dropna().astype(str).tolist()
+    serialized = json.dumps(first)
+    assert all(name == "Unknown" or name not in serialized for name in private_names)
+    assert first["run"]["previousAuditHash"] == "GENESIS"
+    assert second["run"]["previousAuditHash"] == first["run"]["auditHash"]
+
+
+def test_internal_agent_run_lookup_does_not_treat_query_descriptor_as_filter():
+    analytics.agent_run_log.clear()
+    result = analytics.run_investigation_agent(analytics.InvestigationAgentRequest(
+        caseId=50005, role="analyst", query="Prepare a cited evidence verification plan for supervisor review.",
+    ))
+
+    runs = analytics.get_agent_runs()["runs"]
+
+    assert any(run["runId"] == result["run"]["runId"] for run in runs)
+
+
+def test_investigation_agent_rejects_unauthorized_role():
+    from fastapi import HTTPException
+    try:
+        analytics.run_investigation_agent(analytics.InvestigationAgentRequest(
+            caseId=50005, role="guest", query="Review this FIR evidence before proceeding.",
+        ))
+    except HTTPException as error:
+        assert error.status_code == 403
+    else:
+        raise AssertionError("Unauthorised role should be rejected")
+
+
+def test_proactive_sentinel_returns_review_only_triggers():
+    payload = analytics.get_agent_sentinel(limit=4)
+
+    assert payload["triggers"]
+    assert all(item["humanReviewRequired"] for item in payload["triggers"])
+    assert all(item["source"] for item in payload["triggers"])
+    assert "does not predict individual" in payload["guardrail"]
 
 
 def test_each_primary_screen_has_nonempty_data_contract():

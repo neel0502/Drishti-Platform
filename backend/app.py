@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -16,6 +16,7 @@ import os
 import json
 import math
 import hashlib
+import hmac
 import mimetypes
 import tempfile
 import uuid
@@ -31,24 +32,42 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 from backend import catalyst_store
+from backend import ai_agent
+from backend import agent_catalog
 
 # Create FastAPI app
 app = FastAPI(title="Drishti Intelligence API")
 
-# Add CORS Middleware
+# Same-origin is the secure default. Explicit cross-origin access can be enabled
+# only for known deployment surfaces through DRISHTI_ALLOWED_ORIGINS.
+allowed_origins = [
+    origin.strip() for origin in os.getenv("DRISHTI_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=allowed_origins,
+    allow_credentials=bool(allowed_origins),
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def prevent_stale_application_shell(request: Request, call_next):
+    """Force browsers to revalidate the HTML shell after AppSail deployments."""
+    response = await call_next(request)
+    if request.url.path in {"/", "/index.html"}:
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+    return response
 
 # Resolve directories
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 BOOTSTRAP_DIR = os.path.join(BASE_DIR, "bootstrap-data")
 CATALYST_SCHEMA = os.path.join(BASE_DIR, "deployment", "catalyst", "datastore-schema.json")
+USE_CASE_SEED_DIR = os.path.join(BASE_DIR, "use-case-data")
 
 # Global DataFrames & Models
 df_case = None
@@ -78,9 +97,11 @@ offence_classifier = None
 offence_classifier_labels = []
 analytics_ready = Event()
 analytics_initialization_lock = Lock()
+synthetic_seed_lock = Lock()
 analytics_error = None
 operational_action_log = []
 hypothesis_boards = []
+agent_run_log = []
 development_evidence_registry = []
 EVIDENCE_UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "drishti-development-evidence")
 MAX_EVIDENCE_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -111,6 +132,17 @@ def health_check():
         "dataLoaded": analytics_ready.is_set(),
         "initializationError": analytics_error,
         "dataSource": data_source_status,
+        "ai": ai_agent.model_configuration(),
+        "security": {
+            "corsMode": "explicit allowlist" if allowed_origins else "same-origin only",
+            "agentMode": "constrained allowlisted tools with human review",
+            "authenticationMode": os.getenv("DRISHTI_AUTH_MODE", "demo").lower(),
+            "authorizationBoundary": (
+                "Catalyst-authenticated identity and server-side role scope"
+                if os.getenv("DRISHTI_AUTH_MODE", "demo").lower() == "catalyst"
+                else "Explicit prototype role simulation; not production authentication"
+            ),
+        },
     }
 
 
@@ -805,6 +837,76 @@ def bootstrap_catalyst_datastore(request: Request, table: Optional[str] = Query(
                 "error": str(exc),
             },
         )
+
+
+@app.post("/api/internal/seed-synthetic-use-cases", tags=["operations"])
+def seed_synthetic_use_cases(request: Request):
+    """Idempotently insert the fixed, validated synthetic use-case package.
+
+    Callers cannot supply records. The endpoint is restricted to Catalyst's
+    development hostname, reserved IDs, a small row cap, and a confirmation
+    derived from the exact bundled manifest.
+    """
+    host = request.url.hostname or ""
+    if host not in {"127.0.0.1", "localhost"} and not host.endswith(".development.catalystappsail.in"):
+        raise HTTPException(status_code=403, detail="Synthetic seeding is restricted to Catalyst development")
+    if data_source_status["active"] != "catalyst":
+        raise HTTPException(status_code=503, detail="Synthetic seeding requires Catalyst Data Store")
+    manifest_path = os.path.join(USE_CASE_SEED_DIR, "scenario-manifest.json")
+    if not os.path.exists(manifest_path):
+        raise HTTPException(status_code=503, detail="Synthetic use-case package is not bundled")
+    with open(manifest_path, "rb") as stream:
+        manifest_bytes = stream.read()
+    expected_confirmation = hashlib.sha256(manifest_bytes).hexdigest()[:24]
+    provided_confirmation = request.headers.get("x-drishti-synthetic-seed", "")
+    if not hmac.compare_digest(provided_confirmation, expected_confirmation):
+        raise HTTPException(status_code=403, detail="Synthetic seed confirmation is invalid")
+    manifest = json.loads(manifest_bytes)
+    if manifest.get("synthetic") is not True or manifest.get("totalRows", 0) > 500:
+        raise HTTPException(status_code=422, detail="Synthetic seed package failed its safety contract")
+    if int(manifest.get("baseCaseId", 0)) < 8_000_000:
+        raise HTTPException(status_code=422, detail="Synthetic seed IDs are outside the reserved range")
+
+    unique_columns = {
+        "CaseMaster": "CaseMasterID", "Accused": "AccusedMasterID",
+        "Victim": "VictimMasterID", "ComplainantDetails": "ComplainantID",
+        "ArrestSurrender": "ArrestSurrenderID", "ChargesheetDetails": "CSID",
+    }
+    inserted, existing = {}, {}
+    with synthetic_seed_lock:
+        for table, unique_column in unique_columns.items():
+            csv_path = os.path.join(USE_CASE_SEED_DIR, f"{table}.csv")
+            if not os.path.exists(csv_path):
+                raise HTTPException(status_code=503, detail=f"Synthetic package is missing {table}")
+            frame = pd.read_csv(csv_path)
+            if unique_column not in frame or frame[unique_column].duplicated().any():
+                raise HTTPException(status_code=422, detail=f"Synthetic {table} keys are invalid")
+            current_rows = catalyst_store.fetch_table(table)
+            current_ids = {str(row.get(unique_column)) for row in current_rows}
+            missing_frame = frame[~frame[unique_column].astype(str).isin(current_ids)]
+            records = missing_frame.where(pd.notna(missing_frame), None).to_dict(orient="records")
+            try:
+                if records:
+                    catalyst_store.insert_schema_rows({table: records})
+            except Exception as exc:
+                raise HTTPException(status_code=502, detail=f"Synthetic {table} insert failed: {exc}") from exc
+            inserted[table] = len(records)
+            existing[table] = len(frame) - len(records)
+        load_data()
+        build_network_graph()
+        build_nlp_index()
+
+    return {
+        "status": "seeded" if sum(inserted.values()) else "already-seeded",
+        "synthetic": True, "insertedRows": inserted, "existingRows": existing,
+        "totalInserted": sum(inserted.values()),
+        "scenarios": [{
+            "code": item["code"], "title": item["title"],
+            "caseIds": item["caseIds"], "expectedSignals": item["expectedSignals"],
+            "negativeControl": item["negativeControl"],
+        } for item in manifest["scenarios"]],
+        "notice": "Synthetic development records only. Existing FIR rows were not modified.",
+    }
 
 # ─── API ENDPOINTS ────────────────────────────────────────────────────────
 
@@ -1567,6 +1669,11 @@ async def upload_development_evidence(
     category: str = Query("document"),
     source: str = Query("station_intake"),
     note: str = Query("", max_length=2000),
+    collectedBy: str = Query("Authorized officer", max_length=120),
+    collectedAt: Optional[str] = Query(None, max_length=50),
+    collectionLocation: str = Query("", max_length=240),
+    sealNumber: str = Query("", max_length=80),
+    receivedBy: str = Query("Evidence officer", max_length=120),
 ):
     """Store a bounded development evidence file with immutable metadata and checksum.
 
@@ -1575,6 +1682,15 @@ async def upload_development_evidence(
     """
     if category not in EVIDENCE_CATEGORIES:
         raise HTTPException(status_code=422, detail="Choose a valid evidence type")
+    if caseId is not None and df_case[df_case["CaseMasterID"] == caseId].empty:
+        raise HTTPException(status_code=404, detail="Case not found")
+    if collectedAt:
+        try:
+            collected_at = datetime.fromisoformat(collectedAt.replace("Z", "+00:00")).isoformat()
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Provide the collection time in ISO format") from exc
+    else:
+        collected_at = datetime.now(timezone.utc).isoformat()
     encoded_filename = request.headers.get("x-evidence-filename", "")
     filename = os.path.basename(unquote(encoded_filename)).strip() or "uploaded-evidence"
     mime_type = request.headers.get("content-type", "application/octet-stream").split(";", 1)[0].strip().lower()
@@ -1608,21 +1724,49 @@ async def upload_development_evidence(
         "categoryLabel": EVIDENCE_CATEGORIES[category],
         "source": source[:80],
         "noteRecorded": bool(note.strip()),
+        "note": redact_agent_text(note.strip())[:2000],
+        "collectedBy": redact_agent_text(collectedBy.strip())[:120],
+        "collectedAt": collected_at,
+        "collectionLocation": redact_agent_text(collectionLocation.strip())[:240],
+        "sealNumber": redact_agent_text(sealNumber.strip())[:80],
+        "receivedBy": redact_agent_text(receivedBy.strip())[:120],
         "receivedAt": received_at,
+        "custodyStatus": "received",
+        "humanVerified": False,
         "storageNotice": "Stored only in temporary development application storage; not a production evidence vault.",
     }
     development_evidence_registry.insert(0, record)
     del development_evidence_registry[100:]
+    if caseId is not None:
+        event = _append_workflow_event("evidence-created", caseId, record, "received")
+        record["auditEventId"] = event["actionId"]
+        if event.get("persistenceWarning"):
+            record["persistenceWarning"] = event["persistenceWarning"]
     return record
 
 
 @app.get("/api/evidence")
 def list_development_evidence(caseId: Optional[int] = Query(None, ge=1)):
     """Return development evidence metadata only; file content is intentionally not served."""
-    records = development_evidence_registry
+    if not isinstance(caseId, (int, type(None))):
+        caseId = None
+    records_by_id = {record["id"]: dict(record) for record in development_evidence_registry}
+    for event in _read_workflow_events("evidence-", caseId):
+        payload = event["eventPayload"]
+        evidence_id = str(payload.get("evidenceId") or payload.get("id") or "")
+        if not evidence_id:
+            continue
+        if event["actionType"] == "evidence-created":
+            records_by_id.setdefault(evidence_id, {**payload, "caseId": event["caseId"]})
+        elif evidence_id in records_by_id:
+            records_by_id[evidence_id]["custodyStatus"] = payload.get("status", event["status"])
+            records_by_id[evidence_id]["humanVerified"] = payload.get("status") == "verified"
+            records_by_id[evidence_id]["verifiedBy"] = payload.get("officer")
+            records_by_id[evidence_id]["verifiedAt"] = event["timestamp"]
+    records = sorted(records_by_id.values(), key=lambda item: str(item.get("receivedAt") or ""), reverse=True)
     if caseId is not None:
         records = [record for record in records if record["caseId"] == caseId]
-    return {"records": records, "notice": "Metadata only. Development uploads are not exposed as downloadable evidence files."}
+    return {"records": records, "notice": "Custody metadata is append-only and persisted when Catalyst is active. Uploaded binary files remain temporary development artifacts and are never exposed through a download endpoint."}
 
 
 @app.get("/api/cases/{case_id}/links")
@@ -1835,6 +1979,732 @@ def get_incident_reconstruction(case_id: int):
     return build_incident_reconstruction(case_id)
 
 
+@app.get("/api/cases/{case_id}/command-plan")
+def get_case_command_plan(case_id: int):
+    """Return an evidence-led, human-approved command plan for one FIR.
+
+    This intentionally packages existing recorded case links and evidence gaps
+    into an officer workflow; it never makes an autonomous operational decision.
+    """
+    reconstruction = build_incident_reconstruction(case_id)
+    case = reconstruction["case"]
+    decision = reconstruction["decisionSupport"]
+    top_link = reconstruction["linkedCases"][0] if reconstruction["linkedCases"] else None
+    steps = []
+    for index, missing in enumerate(reconstruction["missingLinks"][:3], start=1):
+        steps.append({
+            "id": f"evidence-{index}",
+            "stage": "Evidence verification",
+            "priority": "urgent" if missing["status"] == "conflict" else "review",
+            "title": f"Resolve {missing['field']}",
+            "rationale": missing["impact"],
+            "nextStep": missing["nextStep"],
+        })
+    if top_link:
+        steps.append({
+            "id": "link-review",
+            "stage": "Cross-case review",
+            "priority": "review",
+            "title": f"Validate linked FIR {top_link['crimeNo']}",
+            "rationale": f"Connection score {top_link['connectionScore']}/100 is based on recorded signals, not proof.",
+            "nextStep": "Compare source FIRs and verify every listed signal before coordinating or merging investigations.",
+        })
+    if len(decision["affectedDistricts"]) > 1:
+        steps.append({
+            "id": "coordination",
+            "stage": "Supervisor decision",
+            "priority": "approval",
+            "title": "Consider cross-district coordination",
+            "rationale": f"Related FIRs span {', '.join(decision['affectedDistricts'])}.",
+            "nextStep": "A designated supervisor must review the evidence and explicitly approve any coordination request.",
+        })
+    return {
+        "case": case,
+        "priority": decision["priority"],
+        "evidenceCompleteness": reconstruction["dataCompleteness"],
+        "strongestLinkScore": decision["strongestLinkScore"],
+        "linkedCases": reconstruction["linkedCases"][:3],
+        "steps": steps,
+        "guardrail": "Decision support only. Every cross-case link, evidence gap, and operational action requires human verification and approval.",
+    }
+
+
+AGENT_ROLE_POLICIES = {
+    "command": {"case_review", "cross_district", "patrol_context"},
+    "district": {"case_review", "cross_district"},
+    "analyst": {"case_review"},
+    "station": {"case_review"},
+    "patrol": {"patrol_context"},
+}
+
+
+class InvestigationAgentRequest(BaseModel):
+    caseId: int
+    role: str = "district"
+    query: str = "What evidence must be verified before a review decision?"
+    language: str = "en"
+
+
+class AgentWorkflowRequest(BaseModel):
+    agentId: str
+    caseId: Optional[int] = None
+    role: str = "station"
+    query: Optional[str] = None
+    language: str = "en"
+    context: Optional[dict] = None
+
+
+def redact_agent_text(value):
+    """Apply output minimisation before agent-generated text reaches the UI."""
+    text = str(value or "")
+    def mask_last_four(match, label):
+        digits = re.sub("[^0-9]", "", match.group(0))
+        return f"{label}-••••{digits[-4:]}"
+    text = re.sub(r"(?<!\d)(?:\+91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}(?!\d)", lambda match: mask_last_four(match, "PHONE"), text)
+    text = re.sub(r"(?<!\d)\d{4}[\s-]?\d{4}[\s-]?\d{4}(?!\d)", lambda match: mask_last_four(match, "ID"), text)
+    text = VEHICLE_PATTERN.sub("VEHICLE-••••", text)
+    return text
+
+
+def _bounded_confidence(value, default=50):
+    try:
+        return max(0, min(100, int(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def validate_model_agent_draft(payload, allowed_source_ids, allowed_action_types=None):
+    """Turn untrusted model JSON into the existing safe UI response contract."""
+    if not isinstance(payload, dict):
+        raise ValueError("Model draft is not an object")
+    allowed_claim_types = {"recorded_context", "evidence_gap", "candidate_link"}
+    allowed_action_types = set(allowed_action_types or {"verify_evidence", "validate_case_link", "draft_coordination_review"})
+    allowed_source_ids = set(allowed_source_ids)
+    claims = []
+    for raw in (payload.get("claims") or [])[:5]:
+        if not isinstance(raw, dict) or raw.get("claimType") not in allowed_claim_types:
+            continue
+        sources = [str(item) for item in (raw.get("sourceIds") or []) if str(item) in allowed_source_ids]
+        statement = redact_agent_text(str(raw.get("statement") or "").strip())[:800]
+        if not statement or not sources:
+            continue
+        claims.append({
+            "id": f"CL{len(claims) + 1}",
+            "statement": statement,
+            "claimType": raw["claimType"],
+            "supportingSourceIds": sources,
+            "confidenceBeforeReview": _bounded_confidence(raw.get("confidence")),
+            "recordStatus": {
+                "recorded_context": "recorded FIR context—underlying assertions require verification",
+                "evidence_gap": "computed from current record presence",
+                "candidate_link": "analytical lead—not proof",
+            }[raw["claimType"]],
+        })
+    if not claims:
+        raise ValueError("Model draft did not contain a source-linked claim")
+
+    reviews_by_index = {}
+    for raw in (payload.get("skepticReviews") or [])[:5]:
+        if not isinstance(raw, dict):
+            continue
+        try:
+            index = int(raw.get("claimIndex"))
+        except (TypeError, ValueError):
+            continue
+        if 0 <= index < len(claims):
+            reviews_by_index[index] = raw
+    reviews = []
+    for index, claim in enumerate(claims):
+        raw = reviews_by_index.get(index, {})
+        sources = [str(item) for item in (raw.get("sourceIds") or []) if str(item) in allowed_source_ids]
+        after = min(claim["confidenceBeforeReview"], _bounded_confidence(raw.get("confidenceAfterReview"), claim["confidenceBeforeReview"] - 10))
+        reviews.append({
+            "claimId": claim["id"],
+            "verdict": redact_agent_text(str(raw.get("verdict") or "retain with verification"))[:120],
+            "challenge": redact_agent_text(str(raw.get("challenge") or "Verify the cited source records and seek independent corroboration."))[:800],
+            "contradictingSourceIds": sources,
+            "confidenceAfterReview": max(0, after),
+        })
+
+    actions = []
+    for raw in (payload.get("actions") or [])[:5]:
+        if not isinstance(raw, dict) or raw.get("type") not in allowed_action_types:
+            continue
+        sources = [str(item) for item in (raw.get("sourceIds") or []) if str(item) in allowed_source_ids]
+        title = redact_agent_text(str(raw.get("title") or "").strip())[:180]
+        reason = redact_agent_text(str(raw.get("reason") or "").strip())[:800]
+        if title and reason and sources:
+            actions.append({
+                "type": raw["type"], "title": title, "reason": reason,
+                "sourceIds": sources, "requiresHumanApproval": True,
+            })
+    if not actions:
+        raise ValueError("Model draft did not contain a source-linked review action")
+    summary = redact_agent_text(str(payload.get("summary") or "Investigation review draft generated from cited records."))[:1200]
+    return summary, claims, reviews, actions
+
+
+def run_investigation_agent(request: InvestigationAgentRequest, workflow_spec=None):
+    """A constrained, evidence-cited orchestration layer over internal tools.
+
+    The agent intentionally has no free-form network, messaging, enforcement, or
+    dispatch tools. It may only retrieve case context, identify gaps, and create
+    a human-review draft. This is the production safety boundary for the demo.
+    """
+    role = request.role.strip().lower()
+    allowed_tools = AGENT_ROLE_POLICIES.get(role)
+    if allowed_tools is None or (workflow_spec is not None and role not in workflow_spec.roles):
+        raise HTTPException(status_code=403, detail="This role is not permitted to run the investigation agent")
+    if len(request.query.strip()) < 8 or len(request.query) > 1200:
+        raise HTTPException(status_code=422, detail="Provide an investigation question between 8 and 1200 characters")
+
+    source_map = {
+        "case_reconstruction": {"C1", "C2"}, "case_brief": {"C4"},
+        "case_link_review": {"C3"}, "data_quality_review": {"C5"},
+        "shift_context": {"C6"},
+    }
+    workflow_tool_names = set(workflow_spec.tools) if workflow_spec else {
+        "case_reconstruction", "case_brief", "case_link_review", "data_quality_review"
+    }
+    case_rows = df_case[df_case["CaseMasterID"] == request.caseId]
+    if case_rows.empty:
+        raise HTTPException(status_code=404, detail="Case not found")
+    case_row = case_rows.iloc[0]
+    private_names = set()
+    for frame, column in (
+        (df_accused, "AccusedName"), (df_victim, "VictimName"), (df_complainant, "ComplainantName")
+    ):
+        if frame is None or column not in frame.columns:
+            continue
+        values = frame[frame["CaseMasterID"] == request.caseId][column].dropna().astype(str)
+        private_names.update(value.strip() for value in values if len(value.strip()) >= 4 and value.strip().lower() != "unknown")
+
+    def minimize_agent_value(value):
+        text = redact_agent_text(value)
+        for name in sorted(private_names, key=len, reverse=True):
+            text = re.sub(re.escape(name), "PERSON-REDACTED", text, flags=re.IGNORECASE)
+        return text
+    if "case_reconstruction" in workflow_tool_names:
+        reconstruction = build_incident_reconstruction(request.caseId)
+        case = reconstruction["case"]
+    else:
+        case = {
+            "caseId": int(request.caseId), "crimeNo": str(case_row["CrimeNo"]),
+            "crimeType": str(case_row["_SubheadName"]),
+            "district": get_district_name(case_row["_DistrictID"]),
+            "briefFacts": str(case_row.get("BriefFacts") or ""),
+        }
+        reconstruction = {"case": case, "missingLinks": [], "decisionSupport": {"affectedDistricts": []}}
+    brief = get_case_ai_brief(request.caseId) if "case_brief" in workflow_tool_names else {"summary": "Case narrative was not requested by this workflow."}
+    links = get_case_links(request.caseId, top_n=3) if "case_link_review" in workflow_tool_names else {"relatedCases": []}
+    quality = data_quality_command_centre(districtId=int(case_row["_DistrictID"])) if "data_quality_review" in workflow_tool_names else {"scope": case["district"]}
+    priority_context = lifecycle_priority(districtId=None, limit=8).get("cases", [])[:8] if "shift_context" in workflow_tool_names else []
+    sentinel_context = get_agent_sentinel(limit=6).get("triggers", [])[:6] if "shift_context" in workflow_tool_names else []
+    all_fallback_tools = [
+        {"name": "case_reconstruction", "purpose": "Retrieve recorded timeline and evidence gaps", "status": "completed"},
+        {"name": "case_brief", "purpose": "Extract recorded FIR narrative signals", "status": "completed"},
+        {"name": "case_link_review", "purpose": "Retrieve explainable cross-FIR signals", "status": "completed"},
+        {"name": "data_quality_review", "purpose": "Challenge leads against district data-quality risks", "status": "completed"},
+        {"name": "shift_context", "purpose": "Retrieve priority work, pending reviews, and recorded handoffs", "status": "completed"},
+    ]
+    citations = [
+        {"id": "C1", "label": f"FIR {case['crimeNo']} timeline", "source": "CaseMaster.IncidentFromDate, CrimeRegisteredDate, coordinates", "confidence": "recorded"},
+        {"id": "C2", "label": "Evidence-gap assessment", "source": "CaseMaster, Accused, Victim, ArrestSurrender, ChargesheetDetails", "confidence": "recorded schema presence"},
+        {"id": "C3", "label": "Cross-case link assessment", "source": "Explainable FIR link signals", "confidence": "review required"},
+        {"id": "C4", "label": "Extractive FIR brief", "source": "CaseMaster.BriefFacts", "confidence": "recorded narrative"},
+        {"id": "C5", "label": f"{quality['scope']} data-quality audit", "source": "Schema completeness, chronology, geography, and duplicate checks", "confidence": "computed audit"},
+        {"id": "C6", "label": "Current shift review context", "source": "Lifecycle priority queue, sentinel triggers, and recorded human actions", "confidence": "computed from recorded workflow state"},
+    ]
+    model_result = None
+    model_warning = None
+
+    tool_payloads = {
+        "case_reconstruction": {
+            "citations": citations[:2], "case": reconstruction["case"],
+            "timeline": reconstruction.get("timeline", []),
+            "missingLinks": reconstruction["missingLinks"],
+            "decisionSupport": reconstruction.get("decisionSupport", {}),
+        },
+        "case_brief": {"citations": [citations[3]], "brief": brief},
+        "case_link_review": {"citations": [citations[2]], "relatedCases": links["relatedCases"]},
+        "data_quality_review": {"citations": [citations[4]], "audit": quality},
+        "shift_context": {
+            "citations": [citations[5]],
+            "priorityCases": priority_context,
+            "reviewTriggers": sentinel_context,
+            "recordedActions": operational_action_log[:12],
+        },
+    }
+    workflow_source_ids = set().union(*(source_map[name] for name in workflow_tool_names))
+    fallback_tools_used = [item for item in all_fallback_tools if item["name"] in workflow_tool_names]
+    visible_citations = [item for item in citations if item["id"] in workflow_source_ids]
+
+    def execute_agent_tool(name):
+        if name not in tool_payloads:
+            raise ValueError(f"Tool is not allowlisted: {name}")
+        # Identifiers are minimized before any content leaves the application.
+        return json.loads(minimize_agent_value(json.dumps(tool_payloads[name], default=str)))
+
+    try:
+        model_result = ai_agent.run_model_agent(
+            case_id=request.caseId, role=role, query=request.query.strip(),
+            execute_tool=execute_agent_tool,
+            agent_name=workflow_spec.name if workflow_spec else None,
+            focus=workflow_spec.focus if workflow_spec else None,
+            allowed_tool_names=set(workflow_spec.tools) if workflow_spec else None,
+            allowed_action_types=set(workflow_spec.action_types) if workflow_spec else None,
+        )
+    except Exception as exc:
+        model_warning = (
+            "The live model did not complete within the officer response window; "
+            f"the validated source-linked evidence workflow was returned instead ({type(exc).__name__})."
+        )
+
+    scout_claims = []
+    if {"C1", "C4"} & workflow_source_ids:
+        scout_claims.append({
+            "id": f"CL{len(scout_claims) + 1}",
+            "statement": redact_agent_text(brief["summary"]),
+            "claimType": "recorded_context",
+            "supportingSourceIds": [source_id for source_id in ("C1", "C4") if source_id in workflow_source_ids],
+            "confidenceBeforeReview": 95,
+            "recordStatus": "recorded FIR context",
+        })
+    if "C2" in workflow_source_ids:
+        scout_claims.append({
+            "id": f"CL{len(scout_claims) + 1}",
+            "statement": f"The case has {len(reconstruction['missingLinks'])} missing, partial, or conflicting evidence links.",
+            "claimType": "evidence_gap",
+            "supportingSourceIds": ["C2"],
+            "confidenceBeforeReview": 99,
+            "recordStatus": "computed from record presence",
+        })
+    if "C5" in workflow_source_ids:
+        scout_claims.append({
+            "id": f"CL{len(scout_claims) + 1}",
+            "statement": f"The {quality['scope']} data-quality audit must be reviewed before relying on incomplete or conflicting records.",
+            "claimType": "evidence_gap",
+            "supportingSourceIds": ["C5"],
+            "confidenceBeforeReview": 90,
+            "recordStatus": "computed data-quality finding",
+        })
+    if "C6" in workflow_source_ids:
+        shift_payload = tool_payloads["shift_context"]
+        scout_claims.append({
+            "id": f"CL{len(scout_claims) + 1}",
+            "statement": f"Current workflow context contains {len(shift_payload['priorityCases'])} priority cases and {len(shift_payload['reviewTriggers'])} review triggers.",
+            "claimType": "recorded_context",
+            "supportingSourceIds": ["C6"],
+            "confidenceBeforeReview": 90,
+            "recordStatus": "computed workflow context",
+        })
+    if links["relatedCases"] and "C3" in workflow_source_ids:
+        strongest = links["relatedCases"][0]
+        scout_claims.append({
+            "id": f"CL{len(scout_claims) + 1}",
+            "statement": f"FIR {strongest['crimeNo']} is a candidate related case with connection score {strongest['connectionScore']}/100.",
+            "claimType": "candidate_link",
+            "supportingSourceIds": ["C3"],
+            "confidenceBeforeReview": int(strongest["connectionScore"]),
+            "recordStatus": "analytical lead—not proof",
+        })
+
+    skeptic_reviews = []
+    for claim in scout_claims:
+        if claim["claimType"] == "candidate_link":
+            weak_link = claim["confidenceBeforeReview"] < 65
+            skeptic_reviews.append({
+                "claimId": claim["id"],
+                "verdict": "challenged" if weak_link else "retain with verification",
+                "challenge": "The connection may reflect a common offence, district, or narrative pattern rather than a shared offender. Validate the source FIRs and independent identifiers.",
+                "contradictingSourceIds": [source_id for source_id in ("C2", "C5") if source_id in workflow_source_ids] or claim["supportingSourceIds"],
+                "confidenceAfterReview": max(10, claim["confidenceBeforeReview"] - (15 if weak_link else 5)),
+            })
+        elif claim["claimType"] == "recorded_context":
+            skeptic_reviews.append({
+                "claimId": claim["id"],
+                "verdict": "retained as recorded context",
+                "challenge": "The narrative is recorded but may contain unverified complainant or witness assertions; consult the source FIR and supporting evidence.",
+                "contradictingSourceIds": ["C2"] if "C2" in workflow_source_ids else claim["supportingSourceIds"],
+                "confidenceAfterReview": 85,
+            })
+        else:
+            skeptic_reviews.append({
+                "claimId": claim["id"],
+                "verdict": "retained",
+                "challenge": "Record absence is confirmed, but absence does not establish that the evidence does not exist outside the current dataset.",
+                "contradictingSourceIds": ["C5"] if "C5" in workflow_source_ids else claim["supportingSourceIds"],
+                "confidenceAfterReview": 90,
+            })
+    actions = []
+    fallback_action_type = "verify_evidence"
+    if workflow_spec is not None:
+        fallback_action_type = workflow_spec.action_types[0]
+    if "C2" in workflow_source_ids:
+        for missing in reconstruction["missingLinks"][:3]:
+            actions.append({
+                "type": fallback_action_type,
+                "title": f"Verify {missing['field']}",
+                "reason": missing["impact"],
+                "sourceIds": ["C2"],
+                "requiresHumanApproval": True,
+            })
+    else:
+        primary_source_id = next(source_id for source_id in ("C6", "C5", "C2", "C3", "C4", "C1") if source_id in workflow_source_ids)
+        action_title = {
+            "verify_record": "Verify cited record",
+            "add_task_draft": "Draft officer follow-up task",
+            "request_review": "Request human review",
+            "prepare_document_draft": "Prepare editable document draft",
+            "validate_case_link": "Validate candidate case link",
+            "draft_coordination_review": "Draft coordination review",
+        }.get(fallback_action_type, "Prepare human-review draft")
+        actions.append({
+            "type": fallback_action_type,
+            "title": action_title,
+            "reason": workflow_spec.focus if workflow_spec else "Verify the source records before taking any operational action.",
+            "sourceIds": [primary_source_id],
+            "requiresHumanApproval": True,
+        })
+    if links["relatedCases"] and (workflow_spec is None or "validate_case_link" in workflow_spec.action_types):
+        strongest = links["relatedCases"][0]
+        actions.append({
+            "type": "validate_case_link",
+            "title": f"Review linked FIR {strongest['crimeNo']}",
+            "reason": f"The link has score {strongest['connectionScore']}/100 and must be corroborated before any investigative coordination.",
+            "sourceIds": ["C3"],
+            "requiresHumanApproval": True,
+        })
+    affected = reconstruction["decisionSupport"]["affectedDistricts"]
+    if "cross_district" in allowed_tools and len(affected) > 1 and (workflow_spec is None or "draft_coordination_review" in workflow_spec.action_types):
+        actions.append({
+            "type": "draft_coordination_review",
+            "title": "Draft cross-district review request",
+            "reason": f"Related FIR signals span {', '.join(affected)}.",
+            "sourceIds": ["C1", "C3"],
+            "requiresHumanApproval": True,
+        })
+    workflow_name = workflow_spec.name if workflow_spec else "Drishti Case Investigator"
+    if request.language.strip().lower() == "kn":
+        answer = (
+            f"{workflow_name} ಎಫ್‌ಐಆರ್ {case['crimeNo']}ಗಾಗಿ {len(scout_claims)} ಮೂಲ-ಸಂಬಂಧಿತ ಕಂಡುಹಿಡಿಕೆಗಳನ್ನು ಪರಿಶೀಲಿಸಿದೆ. "
+            f"ಸಂದೇಹ ಪರಿಶೀಲನೆ {len(skeptic_reviews)} ಕಂಡುಹಿಡಿಕೆಗಳ ಅನಿಶ್ಚಿತತೆಯನ್ನು ದಾಖಲಿಸಿದೆ. ಇದು ಪರಿಶೀಲನಾ ಕರಡು ಮಾತ್ರ; "
+            "ಅಧಿಕಾರಿ ಉಲ್ಲೇಖಿತ ಮೂಲಗಳನ್ನು ಪರಿಶೀಲಿಸಿ ಅನುಮೋದಿಸುವವರೆಗೆ ಯಾವುದೇ ಕಾರ್ಯಾಚರಣೆಗೆ ಅನುಮತಿ ಇಲ್ಲ."
+        )
+    else:
+        answer = (
+            f"{workflow_name} reviewed {len(scout_claims)} source-linked findings for FIR {case['crimeNo']}. "
+            f"The skeptic check recorded uncertainty for {len(skeptic_reviews)} findings. This is a review draft only; "
+            "no operational action is authorized until an officer verifies the cited sources and approves it."
+        )
+    tools_used = fallback_tools_used
+    if model_result is not None:
+        called_source_ids = set()
+        for tool in model_result.tools_used:
+            called_source_ids.update(source_map.get(tool["name"], set()))
+        try:
+            answer, scout_claims, skeptic_reviews, actions = validate_model_agent_draft(
+                model_result.output, called_source_ids,
+                set(workflow_spec.action_types) if workflow_spec else None,
+            )
+            tools_used = model_result.tools_used
+        except ValueError as exc:
+            model_warning = f"Model draft failed evidence validation; deterministic evidence workflow used ({type(exc).__name__})."
+            model_result = None
+    answer = minimize_agent_value(answer)
+    for claim in scout_claims:
+        claim["statement"] = minimize_agent_value(claim["statement"])
+    for review in skeptic_reviews:
+        review["verdict"] = minimize_agent_value(review["verdict"])
+        review["challenge"] = minimize_agent_value(review["challenge"])
+    for action in actions:
+        action["title"] = minimize_agent_value(action["title"])
+        action["reason"] = minimize_agent_value(action["reason"])
+    is_patrol_brief = bool(workflow_spec and workflow_spec.id == "patrol-shift-briefing")
+    if is_patrol_brief:
+        answer = (
+            "The patrol shift briefing reviewed recorded location priorities and current review triggers. "
+            "Confirm recency, operational relevance, unit availability, and supervisor authorization before deployment."
+        )
+        for review in skeptic_reviews:
+            review["challenge"] = (
+                "A recorded location priority may be historical or analytical. Verify current conditions and command authorization before deployment."
+            )
+    plan_fingerprint = hashlib.sha256(json.dumps({
+        "caseId": request.caseId, "role": role, "query": request.query.strip(),
+        "claims": scout_claims, "reviews": skeptic_reviews, "actions": actions,
+    }, sort_keys=True).encode()).hexdigest()[:16]
+    used_tool_names = [item["name"] for item in tools_used]
+    stages = [{
+        "id": "scout", "name": "Scout Agent", "status": "completed",
+        "summary": f"Assembled {len(scout_claims)} source-linked candidate claims.",
+        "toolNames": [name for name in used_tool_names if name != "data_quality_review"],
+    }, {
+        "id": "skeptic", "name": "Skeptic Agent", "status": "completed",
+        "summary": f"Reviewed {len(skeptic_reviews)} claims and attached challenges or alternative explanations.",
+        "toolNames": [name for name in used_tool_names if name in {"data_quality_review", "case_link_review"}],
+    }, {
+        "id": "commander", "name": "Commander Agent", "status": "awaiting human review",
+        "summary": f"Drafted {len(actions)} bounded review actions; execution is unavailable to the agent.",
+        "toolNames": [],
+    }]
+    run = {
+        "runId": f"AGT-{uuid.uuid4().hex[:10].upper()}",
+        "agentId": workflow_spec.id if workflow_spec else "case-investigator",
+        "agentName": workflow_spec.name if workflow_spec else "Drishti Case Investigator",
+        "caseId": request.caseId,
+        "role": role,
+        "query": request.query.strip(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "planFingerprint": plan_fingerprint,
+        "toolsUsed": tools_used,
+        "citationCount": len(visible_citations),
+        "status": "awaiting human review",
+        "stages": stages,
+        "aiProvider": model_result.provider if model_result else "deterministic-fallback",
+        "aiModel": model_result.model if model_result else "deterministic-fallback",
+        "modelResponseId": model_result.response_id if model_result else None,
+        "tokenUsage": model_result.usage if model_result else {"inputTokens": 0, "outputTokens": 0, "totalTokens": 0},
+    }
+    previous_audit_hash = agent_run_log[0]["auditHash"] if agent_run_log else "GENESIS"
+    if previous_audit_hash == "GENESIS" and data_source_status["active"] == "catalyst":
+        try:
+            persisted_runs = catalyst_store.fetch_workflow_rows("agent_runs")
+            if persisted_runs:
+                latest_run = max(persisted_runs, key=lambda row: str(row.get("CreatedAt", "")))
+                previous_audit_hash = str(latest_run.get("AuditHash") or "GENESIS")
+        except Exception:
+            pass
+    run["previousAuditHash"] = previous_audit_hash
+    run["auditHash"] = hashlib.sha256(json.dumps({
+        "previousAuditHash": previous_audit_hash,
+        "runId": run["runId"],
+        "caseId": run["caseId"],
+        "role": run["role"],
+        "timestamp": run["timestamp"],
+        "planFingerprint": run["planFingerprint"],
+        "status": run["status"],
+    }, sort_keys=True).encode()).hexdigest()
+    if data_source_status["active"] == "catalyst":
+        try:
+            catalyst_store.insert_workflow_row("agent_runs", {
+                "RunID": run["runId"], "CaseID": run["caseId"], "Role": run["role"],
+                "QueryHash": hashlib.sha256(run["query"].encode()).hexdigest(),
+                "PlanFingerprint": run["planFingerprint"],
+                "PreviousAuditHash": run["previousAuditHash"], "AuditHash": run["auditHash"],
+                "Tools": [f"agent:{run['agentId']}"] + [item["name"] for item in tools_used],
+                "CitationCount": run["citationCount"], "Status": run["status"],
+                "AIProvider": run["aiProvider"], "AIModel": run["aiModel"],
+                "ModelResponseID": run["modelResponseId"], "TokenUsage": run["tokenUsage"],
+                "CreatedAt": run["timestamp"],
+            })
+            run["auditPersistence"] = "Catalyst append-only workflow table"
+        except Exception as exc:
+            run["auditPersistenceWarning"] = str(exc)
+    else:
+        run["auditPersistence"] = "development in-memory ledger"
+    agent_run_log.insert(0, run)
+    del agent_run_log[200:]
+    return {
+        "run": run,
+        "agent": workflow_spec.public_dict() if workflow_spec else {
+            "id": "case-investigator", "name": "Drishti Case Investigator",
+            "surface": "case-workspace", "requiresCase": True,
+        },
+        "answer": answer,
+        "case": {
+            "caseId": case["caseId"],
+            "crimeNo": "Restricted shift context" if is_patrol_brief else case["crimeNo"],
+            "district": case["district"],
+            "crimeType": "Recorded incident priority" if is_patrol_brief else case["crimeType"],
+        },
+        "toolsUsed": tools_used,
+        "citations": visible_citations,
+        "stages": stages,
+        "claims": scout_claims,
+        "skepticReviews": skeptic_reviews,
+        "recommendedActions": actions,
+        "actionDraft": {
+            "caseId": request.caseId,
+            "actionType": f"agent-{workflow_spec.id if workflow_spec else 'investigation'}-review",
+            "rationale": f"Agent review draft {plan_fingerprint}: verify cited evidence before any coordination.",
+            "approved": False,
+        },
+        "guardrails": [
+            "The agent uses only allowlisted Drishti case-analysis tools.",
+            "Links and summaries are decision support, not proof of involvement or guilt.",
+            "The agent cannot dispatch personnel, send messages, create an FIR, or approve an action.",
+            "A named human officer must verify cited source records and approve every operational action.",
+        ],
+        "environmentNotice": "Generated narrative masks direct phone, vehicle, and 12-digit identity values. The prototype enforces its declared demo role server-side; production derives role and scope from authenticated Catalyst identity claims, never from a browser-supplied value.",
+        "privacy": {
+            "mode": "minimum necessary output",
+            "masked": ["phone identifiers", "vehicle identifiers", "12-digit identity numbers"],
+            "notice": "The agent reasons over authorized source records but masks direct identifiers in generated narrative output by default.",
+        },
+        "model": {
+            "provider": run["aiProvider"], "name": run["aiModel"],
+            "responseId": run["modelResponseId"], "tokenUsage": run["tokenUsage"],
+            "warning": model_warning,
+        },
+    }
+
+
+@app.post("/api/agent/investigate")
+def investigate_with_agent(request: InvestigationAgentRequest):
+    return run_investigation_agent(request)
+
+
+@app.get("/api/agents")
+def get_agent_catalog(role: Optional[str] = Query(default=None)):
+    """Return the bounded agent catalog, optionally filtered to one demo role."""
+    agents = agent_catalog.AGENTS if not role else agent_catalog.agents_for_role(role)
+    return {
+        "agents": [agent.public_dict() for agent in agents],
+        "count": len(agents),
+        "guardrail": "Agents prepare source-linked drafts only. They cannot contact anyone, modify a record, dispatch personnel, or approve an action.",
+        "model": ai_agent.model_configuration(),
+    }
+
+
+def _default_agent_case_id() -> int:
+    priority = lifecycle_priority(districtId=None, limit=1).get("cases", [])
+    if priority:
+        return int(priority[0]["caseId"])
+    if df_case is None or df_case.empty:
+        raise HTTPException(status_code=503, detail="No case records are available for agent context")
+    return int(df_case.sort_values("CrimeRegisteredDate", ascending=False).iloc[0]["CaseMasterID"])
+
+
+@app.post("/api/agents/run")
+def run_agent_workflow(request: AgentWorkflowRequest):
+    """Run one catalog agent inside the shared citation, privacy, and approval boundary."""
+    spec = agent_catalog.get_agent(request.agentId)
+    if spec is None:
+        raise HTTPException(status_code=404, detail="Unknown Drishti agent workflow")
+    role = request.role.strip().lower()
+    if role not in spec.roles:
+        raise HTTPException(status_code=403, detail="This role is not permitted to run the selected agent")
+    if spec.requires_case and request.caseId is None:
+        raise HTTPException(status_code=422, detail="Select a case before running this agent")
+    case_id = int(request.caseId or _default_agent_case_id())
+    query = (request.query or spec.default_prompt).strip()
+    if request.context:
+        minimized_context = redact_agent_text(json.dumps(request.context, ensure_ascii=False, default=str))[:2000]
+        query = f"{query}\nOfficer-provided context (unverified until checked): {minimized_context}"
+    language = request.language.strip().lower()
+    if language not in {"en", "kn"}:
+        language = "en"
+    if language == "kn":
+        query = f"Respond in Kannada, keeping record identifiers unchanged. {query}"
+    result = run_investigation_agent(
+        InvestigationAgentRequest(caseId=case_id, role=role, query=query, language=language),
+        workflow_spec=spec,
+    )
+    result["contextSelection"] = {
+        "requestedCaseId": request.caseId,
+        "resolvedCaseId": case_id,
+        "automatic": request.caseId is None,
+        "notice": "A priority case supplies source context for this shift-level workflow." if request.caseId is None else "Officer-selected case context.",
+    }
+    result["agentUx"] = {
+        "beforeRun": f"{spec.name} may read: {', '.join(spec.tools)}.",
+        "progressSteps": ["Reading authorized records", "Checking source quality", "Challenging weak findings", "Preparing human-review draft"],
+        "controls": ["add_to_checklist", "edit_draft", "request_review", "reject_suggestion", "view_sources"],
+        "executionAvailable": False,
+    }
+    return result
+
+
+@app.get("/api/agent/runs")
+def get_agent_runs(caseId: Optional[int] = Query(None, ge=1)):
+    """Read-only audit ledger of generated agent review drafts in this environment."""
+    # FastAPI replaces ``Query`` when this endpoint is invoked over HTTP, but
+    # internal command-centre/history calls invoke the function directly.
+    # Treat the descriptor as the endpoint's intended ``None`` default.
+    if not isinstance(caseId, (int, type(None))):
+        caseId = None
+    if data_source_status["active"] == "catalyst":
+        try:
+            rows = catalyst_store.fetch_workflow_rows("agent_runs")
+            runs = [{
+                "runId": row.get("RunID"), "caseId": int(row.get("CaseID", 0)),
+                "role": row.get("Role"), "queryHash": row.get("QueryHash"),
+                "planFingerprint": row.get("PlanFingerprint"),
+                "previousAuditHash": row.get("PreviousAuditHash"), "auditHash": row.get("AuditHash"),
+                "tools": row.get("Tools", []), "citationCount": int(row.get("CitationCount", 0)),
+                "aiProvider": row.get("AIProvider") or "deterministic-fallback",
+                "aiModel": row.get("AIModel"), "modelResponseId": row.get("ModelResponseID"),
+                "tokenUsage": row.get("TokenUsage") or {"inputTokens": 0, "outputTokens": 0, "totalTokens": 0},
+                "status": row.get("Status"), "timestamp": row.get("CreatedAt"),
+            } for row in rows]
+            for run in runs:
+                raw_tools = run.get("tools")
+                if isinstance(raw_tools, str):
+                    try:
+                        raw_tools = json.loads(raw_tools)
+                    except Exception:
+                        raw_tools = [raw_tools]
+                raw_tools = list(raw_tools or [])
+                marker = next((item for item in raw_tools if str(item).startswith("agent:")), None)
+                run["agentId"] = str(marker).split(":", 1)[1] if marker else "case-investigator"
+                run["tools"] = [item for item in raw_tools if not str(item).startswith("agent:")]
+            return {"runs": runs if caseId is None else [run for run in runs if run["caseId"] == caseId], "notice": "Catalyst append-only agent audit ledger."}
+        except Exception:
+            pass
+    runs = agent_run_log if caseId is None else [run for run in agent_run_log if run["caseId"] == caseId]
+    return {"runs": runs, "notice": "Development audit ledger. Production deployments persist this immutable event stream in a governed audit store."}
+
+
+@app.get("/api/agent/sentinel")
+def get_agent_sentinel(
+    districtId: Optional[int] = Query(default=None),
+    limit: int = Query(default=6, ge=1, le=12),
+):
+    """Surface proactive, evidence-backed review triggers without taking action."""
+    # Keep the function directly testable outside FastAPI's dependency parser.
+    if not isinstance(districtId, (int, type(None))):
+        districtId = None
+    if not isinstance(limit, int):
+        limit = 6
+    anomaly_rows = compute_monthly_anomalies(limit=8)
+    if districtId is not None:
+        anomaly_rows = [row for row in anomaly_rows if row["districtId"] == districtId]
+    delay_rows = lifecycle_priority(districtId=districtId, limit=min(limit, 8))["cases"]
+    triggers = []
+    for row in anomaly_rows[:3]:
+        lead_case = row["cases"][0] if row["cases"] else None
+        triggers.append({
+            "id": f"SENT-ANOM-{row['districtId']}-{re.sub(r'[^A-Z0-9]', '', row['crimeType'].upper())[:12]}",
+            "category": "volume anomaly",
+            "severity": "high review" if row["ratio"] >= 3 else "review",
+            "title": f"{row['crimeType']} change in {row['district']}",
+            "rationale": f"{row['count']} FIRs in {row['period']} versus a 12-month mean of {row['baselineMean']} ({row['ratio']}×).",
+            "caseId": lead_case["id"] if lead_case else None,
+            "source": "12-month district/offence baseline and current complete-month FIR volume",
+            "humanReviewRequired": True,
+        })
+    for row in delay_rows[:3]:
+        triggers.append({
+            "id": f"SENT-DELAY-{row['caseId']}",
+            "category": "case-delay prevention",
+            "severity": "high review" if row["delayRisk"] >= 70 else "review",
+            "title": f"FIR {row['crimeNo']} needs lifecycle review",
+            "rationale": f"Process-delay score {row['delayRisk']}% · {' · '.join(row['signals'])}.",
+            "caseId": row["caseId"],
+            "source": "Historical FIR lifecycle model and recorded case-stage links",
+            "humanReviewRequired": True,
+        })
+    triggers.sort(key=lambda item: (item["severity"] == "high review", item["category"] == "case-delay prevention"), reverse=True)
+    return {
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "scope": get_district_name(districtId) if districtId else "Karnataka",
+        "status": "monitoring synthetic development records",
+        "triggers": triggers[:limit],
+        "guardrail": "Sentinel creates review triggers only. It does not predict individual behaviour, accuse a person, dispatch personnel, or alter a case.",
+    }
+
+
 @app.get("/api/cases/{case_id}/ai-brief")
 def get_case_ai_brief(case_id: int):
     """Create an extractive, source-linked officer briefing for one FIR."""
@@ -1888,6 +2758,259 @@ class OperationalActionRequest(BaseModel):
     approved: bool = False
 
 
+TASK_STATUSES = {"open", "in_progress", "awaiting_supervisor", "completed", "returned"}
+TASK_PRIORITIES = {"urgent", "high", "normal", "low"}
+
+
+class InvestigationTaskRequest(BaseModel):
+    caseId: int
+    title: str
+    detail: str
+    owner: str
+    dueDate: str
+    priority: str = "normal"
+    sourceIds: list[str] = Field(default_factory=list)
+    agentId: Optional[str] = None
+    agentRunId: Optional[str] = None
+    createdBy: str = "Authorized officer"
+
+
+class TaskStatusRequest(BaseModel):
+    status: str
+    officer: str = "Authorized officer"
+    note: str = ""
+    role: str = "station"
+
+
+class EvidenceVerificationRequest(BaseModel):
+    officer: str
+    role: str = "station"
+    status: str = "verified"
+    note: str = ""
+
+
+def _append_workflow_event(action_type, case_id, payload, status):
+    timestamp = datetime.now(timezone.utc).isoformat()
+    event_id = f"EVT-{uuid.uuid4().hex[:14].upper()}"
+    entry = {
+        "actionId": event_id, "caseId": int(case_id), "actionType": action_type,
+        "rationale": json.dumps(payload, ensure_ascii=False), "eventPayload": payload,
+        "status": status, "timestamp": timestamp,
+    }
+    operational_action_log.append(entry)
+    if data_source_status["active"] == "catalyst":
+        try:
+            catalyst_store.insert_workflow_row("actions", {
+                "ActionID": event_id, "CaseID": int(case_id), "ActionType": action_type,
+                "Rationale": payload, "Approved": status in {"completed", "verified", "approved"},
+                "Status": status, "CreatedAt": timestamp,
+            })
+            entry["auditPersistence"] = "Catalyst append-only workflow table"
+        except Exception as exc:
+            entry["persistenceWarning"] = str(exc)
+    return entry
+
+
+def _read_workflow_events(prefix=None, case_id=None):
+    rows = []
+    if data_source_status["active"] == "catalyst":
+        try:
+            rows = catalyst_store.fetch_workflow_rows("actions")
+            rows = [{
+                "actionId": str(row.get("ActionID", "")), "caseId": int(row.get("CaseID", 0)),
+                "actionType": str(row.get("ActionType") or ""), "rationale": row.get("Rationale"),
+                "status": str(row.get("Status") or ""), "timestamp": str(row.get("CreatedAt") or ""),
+            } for row in rows]
+        except Exception:
+            rows = list(operational_action_log)
+    else:
+        rows = list(operational_action_log)
+    normalized = []
+    for row in rows:
+        action_type = str(row.get("actionType") or "")
+        if prefix and not action_type.startswith(prefix):
+            continue
+        if case_id is not None and int(row.get("caseId", 0)) != int(case_id):
+            continue
+        payload = row.get("eventPayload")
+        if payload is None:
+            raw = row.get("rationale")
+            if isinstance(raw, dict):
+                payload = raw
+            elif isinstance(raw, str):
+                try:
+                    payload = json.loads(raw)
+                except json.JSONDecodeError:
+                    payload = {"note": raw}
+        item = dict(row)
+        item["eventPayload"] = payload or {}
+        normalized.append(item)
+    return sorted(normalized, key=lambda item: str(item.get("timestamp") or ""))
+
+
+@app.post("/api/tasks")
+def create_investigation_task(request: InvestigationTaskRequest):
+    if df_case[df_case["CaseMasterID"] == request.caseId].empty:
+        raise HTTPException(status_code=404, detail="Case not found")
+    if request.priority not in TASK_PRIORITIES:
+        raise HTTPException(status_code=422, detail="Choose a valid task priority")
+    if not (4 <= len(request.title.strip()) <= 180 and 8 <= len(request.detail.strip()) <= 1200):
+        raise HTTPException(status_code=422, detail="Provide a clear task title and detail")
+    if not request.owner.strip():
+        raise HTTPException(status_code=422, detail="Assign an accountable task owner")
+    if request.agentId and not request.sourceIds:
+        raise HTTPException(status_code=422, detail="Agent-suggested tasks require at least one cited source")
+    try:
+        due_date = datetime.fromisoformat(request.dueDate.replace("Z", "+00:00")).date().isoformat()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Provide the due date in ISO format") from exc
+    task_id = f"TSK-{uuid.uuid4().hex[:10].upper()}"
+    payload = {
+        "taskId": task_id, "title": redact_agent_text(request.title.strip()),
+        "detail": redact_agent_text(request.detail.strip()), "owner": redact_agent_text(request.owner.strip())[:120],
+        "dueDate": due_date, "priority": request.priority, "sourceIds": request.sourceIds[:8],
+        "agentId": request.agentId, "agentRunId": request.agentRunId,
+        "createdBy": redact_agent_text(request.createdBy.strip())[:120],
+    }
+    event = _append_workflow_event("task-created", request.caseId, payload, "open")
+    return {**payload, "caseId": request.caseId, "status": "open", "createdAt": event["timestamp"], "auditEventId": event["actionId"]}
+
+
+@app.post("/api/tasks/{task_id}/status")
+def update_investigation_task(task_id: str, request: TaskStatusRequest):
+    tasks = {task["taskId"]: task for task in get_investigation_tasks()["tasks"]}
+    task = tasks.get(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Investigation task not found")
+    if request.status not in TASK_STATUSES:
+        raise HTTPException(status_code=422, detail="Choose a valid task status")
+    if request.status in {"completed", "returned"} and request.role not in {"command", "district"}:
+        raise HTTPException(status_code=403, detail="A supervisor role must record this decision")
+    allowed_transitions = {
+        "open": {"in_progress"}, "returned": {"in_progress"},
+        "in_progress": {"awaiting_supervisor"},
+        "awaiting_supervisor": {"completed", "returned"},
+        "completed": set(),
+    }
+    if request.status not in allowed_transitions.get(task["status"], set()):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Task cannot move from {task['status']} to {request.status}",
+        )
+    payload = {
+        "taskId": task_id, "status": request.status,
+        "officer": redact_agent_text(request.officer.strip())[:120],
+        "role": request.role, "note": redact_agent_text(request.note.strip())[:800],
+    }
+    event = _append_workflow_event("task-status", task["caseId"], payload, request.status)
+    return {**payload, "caseId": task["caseId"], "timestamp": event["timestamp"], "auditEventId": event["actionId"]}
+
+
+@app.get("/api/tasks")
+def get_investigation_tasks(caseId: Optional[int] = Query(default=None), status: Optional[str] = Query(default=None)):
+    if not isinstance(caseId, (int, type(None))):
+        caseId = None
+    if not isinstance(status, (str, type(None))):
+        status = None
+    events = _read_workflow_events("task-", caseId)
+    tasks = {}
+    for event in events:
+        payload = event["eventPayload"]
+        task_id = str(payload.get("taskId") or "")
+        if not task_id:
+            continue
+        if event["actionType"] == "task-created":
+            tasks[task_id] = {**payload, "caseId": event["caseId"], "status": "open", "createdAt": event["timestamp"], "history": []}
+        elif task_id in tasks:
+            tasks[task_id]["status"] = payload.get("status", event["status"])
+            tasks[task_id]["updatedAt"] = event["timestamp"]
+            tasks[task_id]["history"].append({**payload, "timestamp": event["timestamp"], "auditEventId": event["actionId"]})
+    values = sorted(tasks.values(), key=lambda item: (item.get("dueDate", ""), item.get("createdAt", "")))
+    if status:
+        values = [item for item in values if item["status"] == status]
+    return {"tasks": values, "count": len(values), "notice": "Task state is reconstructed from append-only workflow events."}
+
+
+@app.post("/api/evidence/{evidence_id}/verify")
+def verify_evidence_custody(evidence_id: str, request: EvidenceVerificationRequest):
+    records = {record["id"]: record for record in list_development_evidence()["records"]}
+    record = records.get(evidence_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Evidence metadata record not found")
+    if request.status not in {"verified", "returned"}:
+        raise HTTPException(status_code=422, detail="Choose verified or returned")
+    if request.role not in {"command", "district"}:
+        raise HTTPException(status_code=403, detail="A supervisor role must record the custody decision")
+    payload = {
+        "evidenceId": evidence_id, "status": request.status,
+        "officer": redact_agent_text(request.officer.strip())[:120],
+        "role": request.role, "note": redact_agent_text(request.note.strip())[:800],
+    }
+    event = _append_workflow_event("evidence-status", record["caseId"], payload, request.status)
+    return {**payload, "caseId": record["caseId"], "timestamp": event["timestamp"], "auditEventId": event["actionId"]}
+
+
+@app.get("/api/cases/{case_id}/agent-history")
+def get_case_agent_history(case_id: int):
+    if df_case[df_case["CaseMasterID"] == case_id].empty:
+        raise HTTPException(status_code=404, detail="Case not found")
+    runs = sorted(get_agent_runs(caseId=case_id)["runs"], key=lambda item: str(item.get("timestamp") or ""), reverse=True)
+    events = _read_workflow_events(case_id=case_id)
+    last_run_at = str(runs[0].get("timestamp") or "") if runs else None
+    changes = [event for event in events if not last_run_at or str(event.get("timestamp") or "") > last_run_at]
+    change_types = {
+        "tasks": sum(event["actionType"].startswith("task-") for event in changes),
+        "evidence": sum(event["actionType"].startswith("evidence-") for event in changes),
+        "reviews": sum(not event["actionType"].startswith(("task-", "evidence-")) for event in changes),
+    }
+    return {
+        "caseId": case_id, "runs": runs[:20], "lastRunAt": last_run_at,
+        "changesSinceLastRun": {"total": len(changes), **change_types},
+        "recentChanges": [{
+            "eventId": event["actionId"], "type": event["actionType"], "status": event["status"],
+            "timestamp": event["timestamp"], "summary": event["eventPayload"].get("title") or event["eventPayload"].get("note") or event["actionType"],
+        } for event in changes[-12:][::-1]],
+        "notice": "Changes are derived from append-only task, evidence, and review events recorded after the latest agent run.",
+    }
+
+
+@app.get("/api/supervisor/command-centre")
+def get_supervisor_command_centre(role: str = Query("district")):
+    if role not in {"command", "district"}:
+        raise HTTPException(status_code=403, detail="Supervisor access is required")
+    tasks = get_investigation_tasks()["tasks"]
+    today = datetime.now(timezone.utc).date().isoformat()
+    overdue = [task for task in tasks if task["status"] not in {"completed"} and task.get("dueDate", "9999-12-31") < today]
+    awaiting = [task for task in tasks if task["status"] == "awaiting_supervisor"]
+    coordination = [task for task in tasks if task.get("agentId") == "district-coordination" and task["status"] != "completed"]
+    priority = lifecycle_priority(districtId=None, limit=8).get("cases", [])
+    weak_links = []
+    for case_row in priority[:5]:
+        link_result = get_case_links(int(case_row["caseId"]), top_n=1)
+        if not link_result["relatedCases"]:
+            continue
+        link = link_result["relatedCases"][0]
+        weak_links.append({
+            "caseId": int(case_row["caseId"]), "crimeNo": case_row["crimeNo"],
+            "linkedCrimeNo": link["crimeNo"], "connectionScore": link["connectionScore"],
+            "verificationRequired": True,
+        })
+    quality = data_quality_command_centre(districtId=None)
+    recent_runs = sorted(get_agent_runs()["runs"], key=lambda item: str(item.get("timestamp") or ""), reverse=True)[:10]
+    return {
+        "summary": {
+            "awaitingDecision": len(awaiting), "overdueTasks": len(overdue),
+            "coordinationDrafts": len(coordination), "weakLinks": len(weak_links),
+            "qualityScore": quality["qualityScore"], "recentAgentRuns": len(recent_runs),
+        },
+        "awaitingTasks": awaiting[:12], "overdueTasks": overdue[:12],
+        "coordinationDrafts": coordination[:8], "weakLinks": weak_links,
+        "dataQuality": {"score": quality["qualityScore"], "checks": quality["checks"], "recommendations": quality["recommendations"]},
+        "recentAgentRuns": recent_runs,
+        "guardrail": "Supervisor decisions are recorded human actions. Agents cannot complete tasks, verify custody, or authorize coordination.",
+    }
+
+
 @app.post("/api/actions")
 def record_operational_action(action: OperationalActionRequest):
     if df_case[df_case['CaseMasterID'] == action.caseId].empty:
@@ -1921,16 +3044,16 @@ def get_operational_actions(caseId: int = None):
         try:
             rows = catalyst_store.fetch_workflow_rows("actions")
             actions = [{
-                "actionId": int(row.get("ActionID", 0)), "caseId": int(row.get("CaseID", 0)),
+                "actionId": str(row.get("ActionID", "")), "caseId": int(row.get("CaseID", 0)),
                 "actionType": row.get("ActionType"), "rationale": row.get("Rationale"),
                 "status": row.get("Status"), "timestamp": row.get("CreatedAt"),
-            } for row in rows]
+            } for row in rows if not str(row.get("ActionType") or "").startswith(("task-", "evidence-"))]
             return {"actions": actions if caseId is None else [item for item in actions if item["caseId"] == caseId]}
         except Exception:
             pass
     if caseId is None:
-        return {"actions": operational_action_log}
-    return {"actions": [entry for entry in operational_action_log if entry['caseId'] == caseId]}
+        return {"actions": [entry for entry in operational_action_log if not str(entry.get("actionType") or "").startswith(("task-", "evidence-"))]}
+    return {"actions": [entry for entry in operational_action_log if entry['caseId'] == caseId and not str(entry.get("actionType") or "").startswith(("task-", "evidence-"))]}
 
 @app.get("/api/profile/{name}")
 def get_suspect_profile(name: str):

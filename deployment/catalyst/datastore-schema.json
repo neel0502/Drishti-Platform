@@ -430,7 +430,8 @@
         "Approved": "BOOLEAN",
         "Status": "VARCHAR",
         "CreatedAt": "DATETIME"
-      }
+      },
+      "indexes": ["CaseID", "ActionType", "Status", "CreatedAt"]
     },
     {
       "name": "DrishtiImportJob",
@@ -445,6 +446,28 @@
         "ReportURL": "VARCHAR",
         "CreatedAt": "DATETIME"
       }
+    },
+    {
+      "name": "DrishtiAgentRun",
+      "unique": "RunID",
+      "columns": {
+        "RunID": "VARCHAR",
+        "CaseID": "BIGINT",
+        "Role": "VARCHAR",
+        "QueryHash": "VARCHAR",
+        "PlanFingerprint": "VARCHAR",
+        "PreviousAuditHash": "VARCHAR",
+        "AuditHash": "VARCHAR",
+        "Tools": "TEXT",
+        "CitationCount": "BIGINT",
+        "AIProvider": "VARCHAR",
+        "AIModel": "VARCHAR",
+        "ModelResponseID": "VARCHAR",
+        "TokenUsage": "TEXT",
+        "Status": "VARCHAR",
+        "CreatedAt": "DATETIME"
+      },
+      "indexes": ["CaseID", "CreatedAt", "Status"]
     }
   ]
 }

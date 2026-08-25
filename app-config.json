@@ -4,7 +4,9 @@
 	"stack": "python_3_11",
 	"env_variables": {
 		"DRISHTI_DATA_SOURCE": "catalyst",
-		"DRISHTI_BOOTSTRAP_DATASTORE": "false"
+		"DRISHTI_BOOTSTRAP_DATASTORE": "false",
+		"DRISHTI_AI_MODEL": "gpt-5-mini",
+		"DRISHTI_AI_MODE": "required"
 	},
 	"memory": 1024
 }

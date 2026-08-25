@@ -1,0 +1,473 @@
+/* Action-first hierarchy for police tasks and case review. */
+.agent-centre-heading {
+  margin-bottom: 14px;
+}
+
+.attention-tile.primary {
+  border-color: #b8cad9;
+  background: linear-gradient(135deg, #ffffff, #f4f9fd);
+  box-shadow: 0 5px 16px rgba(16, 42, 67, .08);
+}
+
+.agent-centre-heading h2 {
+  font-size: 31px;
+}
+
+.agent-centre-heading p {
+  max-width: 760px;
+  margin-top: 7px;
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.agent-trust-strip {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 16px;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.agent-trust-strip span {
+  flex: 0 1 auto;
+  padding: 11px 15px;
+  white-space: nowrap;
+}
+
+.agent-trust-strip span + span::before {
+  content: "→";
+  margin-right: 13px;
+  color: #8190a1;
+}
+
+.agent-trust-strip .agent-no-execution {
+  flex: 1;
+  margin-left: auto;
+  text-align: right;
+  white-space: normal;
+}
+
+.agent-trust-strip .agent-no-execution::before {
+  content: none;
+}
+
+.agent-catalogue-toolbar {
+  align-items: center;
+}
+
+.agent-catalogue-toolbar h3 {
+  font-size: 23px;
+}
+
+.agent-filter-chips {
+  padding-top: 14px;
+}
+
+.agent-filter-chips button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+/* The case and task screens already contain the relevant AI control. */
+#case-panel.active ~ .command-orb,
+#agents-panel.active ~ .command-orb {
+  display: none;
+}
+
+.agent-card {
+  min-height: 210px;
+  padding: 18px;
+}
+
+.agent-card.selected {
+  padding: 17px;
+}
+
+.agent-card h4 {
+  margin-top: 13px;
+  font-size: 19px;
+  line-height: 1.3;
+}
+
+.agent-card p {
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.agent-recommended {
+  color: #17603f;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.agent-card-details {
+  margin-top: 10px;
+  color: #5e7084;
+  font-size: 12px;
+}
+
+.agent-card-details summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #315f88;
+  font-weight: 700;
+}
+
+.agent-card-details .agent-technical-name {
+  margin: 7px 0 0;
+  line-height: 1.45;
+}
+
+.agent-card-footer {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e5ebf1;
+}
+
+.agent-runner-heading h3 {
+  font-size: 24px;
+  line-height: 1.3;
+}
+
+.agent-runner-heading p {
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.agent-actions-primary {
+  padding: 16px;
+  border: 1px solid #bfd4e7;
+  border-radius: 9px;
+  background: #f7fbff;
+}
+
+.agent-actions-primary h4 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.agent-section-intro {
+  margin: 5px 0 10px;
+  color: #607286;
+  font-size: 12px;
+}
+
+.agent-detail-section {
+  padding: 13px 0;
+}
+
+.agent-detail-section > summary {
+  cursor: pointer;
+  color: #304c68;
+  font-weight: 800;
+}
+
+.agent-detail-section[open] > summary {
+  margin-bottom: 10px;
+}
+
+details.agent-permission-box {
+  display: block;
+}
+
+.agent-permission-box summary {
+  cursor: pointer;
+  font-weight: 800;
+  color: #2d465f;
+}
+
+.agent-permission-box[open] summary {
+  margin-bottom: 12px;
+}
+
+.agent-permission-box small {
+  display: block;
+  margin-top: 10px;
+  color: #6b7a8b;
+}
+
+.case-loading-fact {
+  grid-column: 1 / -1;
+  padding: 16px 18px;
+}
+
+.case-loading-fact strong,
+.case-loading-fact span {
+  display: block;
+}
+
+.case-loading-fact span {
+  margin-top: 3px;
+  color: var(--workspace-muted);
+  font-size: 12px;
+}
+
+.case-role-journey-wrap {
+  margin: 12px 0 16px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 9px;
+  background: #fff;
+}
+
+.case-role-journey-wrap > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 48px;
+  padding: 0 16px;
+  cursor: pointer;
+  color: #24425f;
+  font-weight: 750;
+}
+
+.case-role-journey-wrap > summary small {
+  color: #68798b;
+  font-weight: 500;
+}
+
+.case-role-journey-wrap[open] > summary {
+  border-bottom: 1px solid var(--workspace-border);
+}
+
+.case-role-journey {
+  margin: 0;
+  border: 0;
+  border-radius: 0 0 9px 9px;
+}
+
+.case-priority-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 230px;
+  gap: 28px;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 21px 23px;
+  border: 1px solid #b9cee2;
+  border-left: 5px solid var(--workspace-amber);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 4px 14px rgba(19, 52, 82, .06);
+}
+
+.case-priority-action h3 {
+  margin: 6px 0 5px;
+  color: var(--workspace-text);
+  font-size: 21px;
+}
+
+.case-priority-action p {
+  margin: 0;
+  color: var(--workspace-muted);
+  line-height: 1.5;
+}
+
+.case-readiness {
+  padding-left: 22px;
+  border-left: 1px solid #dbe3eb;
+}
+
+.case-readiness > span,
+.case-readiness small {
+  display: block;
+  color: var(--workspace-muted);
+  font-size: 11px;
+}
+
+.case-readiness strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--workspace-text);
+  font-size: 24px;
+}
+
+.workspace-step.current {
+  margin-inline: -18px;
+  padding-inline: 18px;
+  border-left: 4px solid var(--workspace-amber);
+  background: #fffaf0;
+}
+
+.case-summary-card p {
+  line-height: 1.6;
+}
+
+details.contextual-agent-strip {
+  display: block;
+  margin: 16px 0 0;
+  background: #fff;
+}
+
+.contextual-agent-strip > summary {
+  cursor: pointer;
+  list-style-position: outside;
+}
+
+.contextual-agent-strip > summary > div {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.contextual-agent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #dbe4ec;
+}
+
+@media (max-width: 900px) {
+  .agent-trust-strip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .agent-trust-strip span {
+    white-space: normal;
+  }
+
+  .agent-trust-strip .agent-no-execution {
+    grid-column: 1 / -1;
+    width: 100%;
+    margin: 0;
+    text-align: left;
+  }
+
+  .case-priority-action {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .case-readiness {
+    padding: 14px 0 0;
+    border-top: 1px solid #dbe3eb;
+    border-left: 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .agent-centre-heading h2 {
+    font-size: 27px;
+  }
+
+  .agent-trust-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .agent-trust-strip span {
+    display: flex;
+    align-items: center;
+    min-height: 58px;
+    padding: 9px;
+    font-size: 11px;
+  }
+
+  .agent-trust-strip span + span::before {
+    content: none;
+  }
+
+  .agent-trust-strip .agent-no-execution {
+    grid-column: 1 / -1;
+    min-height: 44px;
+    font-size: 12px;
+  }
+
+  .agent-filter-chips {
+    display: flex;
+    gap: 7px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    scroll-snap-type: x proximity;
+  }
+
+  .agent-filter-chips button {
+    width: auto;
+    min-width: max-content;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    scroll-snap-align: start;
+  }
+
+  .attention-summary {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    padding-bottom: 7px;
+    scroll-snap-type: x proximity;
+  }
+
+  .attention-tile {
+    flex: 0 0 150px;
+    min-height: 92px;
+    padding: 13px;
+    scroll-snap-align: start;
+  }
+
+  .attention-tile strong {
+    margin: 5px 0;
+    font-size: 24px;
+  }
+
+  .work-card-heading .text-button {
+    flex: 0 0 auto;
+    max-width: 104px;
+    font-size: 11px;
+    line-height: 1.25;
+  }
+
+  .agent-card {
+    min-height: 0;
+  }
+
+  .case-role-journey-wrap > summary {
+    align-items: flex-start;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    min-height: 62px;
+  }
+
+  .case-facts-bar {
+    display: flex;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .case-fact {
+    flex: 0 0 142px;
+    min-height: 76px;
+    padding: 12px 14px;
+    border-bottom: 0;
+  }
+
+  .case-priority-action {
+    padding: 18px;
+  }
+
+  .case-priority-action h3 {
+    font-size: 19px;
+  }
+
+  .command-orb {
+    right: 14px;
+    bottom: 14px;
+    width: 52px;
+    height: 52px;
+    min-width: 52px;
+    padding: 0;
+    border-radius: 50%;
+  }
+
+  .command-orb > span:last-child {
+    display: none;
+  }
+
+  .command-orb-mark {
+    margin: 0;
+  }
+}

@@ -3,6 +3,7 @@
 import csv
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -39,6 +40,7 @@ WORKFLOW_TABLES = {
     "hypotheses": "DrishtiHypothesisBoard",
     "actions": "DrishtiOperationalAction",
     "imports": "DrishtiImportJob",
+    "agent_runs": "DrishtiAgentRun",
 }
 
 _app = None
@@ -211,11 +213,23 @@ def insert_workflow_row(kind, row):
     if app is None:
         raise RuntimeError(_error or "Catalyst SDK initialization failed")
     table_name = WORKFLOW_TABLES[kind]
-    encoded = {
-        key: json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else value
-        for key, value in row.items()
-        if value is not None
-    }
+    encoded = {}
+    for key, value in row.items():
+        if value is None:
+            continue
+        if isinstance(value, (dict, list)):
+            encoded[key] = json.dumps(value, ensure_ascii=False)
+            continue
+        if key.endswith("At") and isinstance(value, str):
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                if parsed.tzinfo is not None:
+                    parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+                encoded[key] = parsed.strftime("%Y-%m-%d %H:%M:%S")
+                continue
+            except ValueError:
+                pass
+        encoded[key] = value
     return app.datastore().table(table_name).insert_row(encoded)
 
 
@@ -236,7 +250,7 @@ def fetch_workflow_rows(kind):
     table_name = WORKFLOW_TABLES[kind]
     rows = fetch_table(table_name)
     for row in rows:
-        for key in ("CaseIDs", "Evidence", "Gaps", "Cases"):
+        for key in ("CaseIDs", "Evidence", "Gaps", "Cases", "Tools", "TokenUsage"):
             if key in row and isinstance(row[key], str):
                 try:
                     row[key] = json.loads(row[key])

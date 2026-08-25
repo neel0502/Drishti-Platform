@@ -1,0 +1,35 @@
+/* Screen-reader label and input sizing corrections kept separate from the generated visual layer. */
+.command-input-wrap {
+  grid-template-columns: minmax(0, 1fr) 64px;
+}
+
+.command-input-wrap > .sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.command-input-wrap textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+/* The workspace heading rules are more specific than the modal's inherited color. */
+.command-assistant .command-assistant-header h2 {
+  color: #ffffff !important;
+}
+
+.command-assistant .command-assistant-header p {
+  color: #d8e9f7 !important;
+}
+
+.command-assistant .command-assistant-header .eyebrow {
+  color: #8ecbff !important;
+}

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Drishti — Crime Intelligence Platform</title>
+  <title>Drishti — Police Case Workspace</title>
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -15,9 +15,18 @@
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="index.css?v=20260726-patrol-layout">
+  <link rel="stylesheet" href="index.css?v=20260824-police-workspace-final">
+  <link rel="stylesheet" href="workspace-v2.css?v=20260824-police-workspace-final">
+  <link rel="stylesheet" href="agent-centre.css?v=20260825-agent-suite-2">
+  <link rel="stylesheet" href="workflow-v3.css?v=20260825-case-workflow-1">
+  <link rel="stylesheet" href="winning-workspace.css?v=20260825-role-workspaces-1">
+  <link rel="stylesheet" href="command-assistant.css?v=20260825-command-assistant-1">
+  <link rel="stylesheet" href="command-assistant-a11y.css?v=20260825-command-assistant-2">
+  <link rel="stylesheet" href="responsive-polish.css?v=20260825-responsive-1">
+  <link rel="stylesheet" href="task-clarity.css?v=20260825-task-clarity-1">
 </head>
 <body>
+  <a class="skip-link" href="#main-workspace" data-i18n="skipToContent">Skip to main content</a>
 
   <!-- APP SHELL -->
   <div class="app-shell">
@@ -33,23 +42,46 @@
           </svg>
           <span class="logo-text">DRISHTI</span>
         </div>
-        <div class="sub-logo">Crime Intelligence Platform</div>
+        <div class="sub-logo" data-i18n="policeCaseWorkspace">Police Case Workspace</div>
       </div>
       <div class="role-switcher">
-        <label for="role-select">Operational workspace</label>
+        <label for="role-select" data-i18n="operationalWorkspace">Operational workspace</label>
         <select id="role-select" aria-label="Choose demo role">
-          <option value="command">State Command · DGP</option>
-          <option value="district">District Command · SP</option>
-          <option value="station">Station Officer · Indiranagar PS</option>
-          <option value="patrol">Patrol Supervisor</option>
-          <option value="analyst">Crime Analyst</option>
+          <option value="command" data-i18n="roleCommand">State Command · DGP</option>
+          <option value="district" data-i18n="roleDistrict">District Command · SP</option>
+          <option value="station" data-i18n="roleStation">Station Officer · Indiranagar PS</option>
+          <option value="patrol" data-i18n="rolePatrol">Patrol Supervisor</option>
+          <option value="analyst" data-i18n="roleAnalyst">Crime Analyst</option>
         </select>
         <p id="role-guidance">Statewide oversight, approvals, and resource coordination.</p>
+        <p class="identity-boundary-note" data-i18n="identityBoundary">Prototype role simulation—not authentication. Production permissions come from verified Catalyst identity.</p>
       </div>
       
       <nav class="nav-links">
+        <div class="nav-section-label primary-nav-label" data-i18n="myWork">My work</div>
+        <a href="#" class="nav-link active primary-nav" data-target="today">
+          <span class="nav-symbol" aria-hidden="true">⌂</span>
+          <span data-i18n="today">Today</span>
+          <span class="nav-badge" id="today-nav-count">0</span>
+        </a>
+        <a href="#" class="nav-link primary-nav" data-target="cases">
+          <span class="nav-symbol" aria-hidden="true">▤</span>
+          <span data-i18n="myCases">My Cases</span>
+        </a>
+        <a href="#" class="nav-link primary-nav" data-target="agents">
+          <span class="nav-symbol" aria-hidden="true">✦</span>
+          <span>AI Agents</span>
+          <span class="nav-badge" id="agents-nav-count">—</span>
+        </a>
+        <a href="#" class="nav-link primary-nav" data-target="reviews">
+          <span class="nav-symbol" aria-hidden="true">✓</span>
+          <span data-i18n="reviewQueue">Review Queue</span>
+          <span class="nav-badge" id="review-nav-count">0</span>
+        </a>
+        <button class="more-tools-toggle" id="more-tools-toggle" type="button" aria-expanded="false"><span aria-hidden="true">⋯</span><span data-i18n="moreTools">More tools</span><span class="more-tools-chevron">⌄</span></button>
+        <div class="nav-section-label primary-nav-label advanced-tools-label" data-i18n="specialistTools">Specialist tools</div>
         <div class="nav-section-label">Command &amp; Control</div>
-        <a href="#" class="nav-link active" data-target="home">
+        <a href="#" class="nav-link" data-target="home">
           <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
           Dashboard
         </a>
@@ -78,6 +110,10 @@
         <a href="#" class="nav-link" data-target="reconstruction">
           <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2a10 10 0 1 0 10 10A10.01 10.01 0 0 0 12 2zm1 11h5v-2h-4V6h-2v7zM5.5 17.1A8 8 0 0 1 4 12H2a10 10 0 0 0 2 6z"/></svg>
           Incident Reconstruction
+        </a>
+        <a href="#" class="nav-link" data-target="commander">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2 3 6v6c0 5.55 3.84 9.74 9 11 5.16-1.26 9-5.45 9-11V6l-9-4zm-1 15-4-4 1.41-1.41L11 14.17l4.59-4.59L17 11l-6 6z"/></svg>
+          Case Commander
         </a>
         <a href="#" class="nav-link" data-target="networks">
           <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
@@ -112,18 +148,19 @@
         <div class="officer-profile">
           <div class="avatar">RS</div>
           <div class="officer-info">
-            <div class="officer-name">DGP R. Sharma</div>
-            <div class="officer-title">State Police Chief</div>
+            <div class="officer-name">Inspector R. Sharma</div>
+            <div class="officer-title" data-i18n="investigatingOfficer">Investigating Officer</div>
           </div>
-          <button class="logout-btn" title="Logout">
+          <button class="logout-btn" title="Logout" aria-label="Logout" data-i18n-aria="logoutAria">
             <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M10.09 15.59L11.5 17l5-5-5-5-1.41 1.41L12.67 11H3v2h9.67l-2.58 2.59zM19 3H5c-1.11 0-2 .9-2 2v4h2V5h14v14H5v-4H3v4c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/></svg>
           </button>
         </div>
       </div>
     </aside>
+    <div class="mobile-nav-scrim" id="mobile-nav-scrim" hidden></div>
     
     <!-- MAIN CONTENT AREA -->
-    <main class="main-content">
+    <main class="main-content" id="main-workspace" tabindex="-1">
       
       <!-- HEADER -->
       <header class="app-header">
@@ -135,8 +172,8 @@
         <div class="header-center">
           <div class="global-search-bar">
             <span class="search-command-icon"><svg class="search-icon" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg></span>
-            <input type="text" id="global-search-input" placeholder="Search intelligence across Karnataka">
-            <button class="search-submit" id="global-search-submit" type="button">Investigate</button>
+            <input type="text" id="global-search-input" aria-label="Search police records" placeholder="FIR, person, phone or vehicle" data-i18n-placeholder="globalSearchPlaceholder">
+            <button class="search-submit" id="global-search-submit" type="button" data-i18n="investigateAction">Search</button>
             <span class="search-shortcut">⌘ K</span>
           </div>
         </div>
@@ -144,17 +181,159 @@
           <span class="header-date" id="current-header-date">Mon 29 Jun 2026</span>
           <div class="status-indicator">
             <span class="pulse-dot green"></span>
-            <span class="status-text" id="data-source-status">Connecting data source</span>
+            <span class="status-text" id="data-source-status">Connecting records</span>
           </div>
+          <button class="language-switch" id="language-switch" type="button" aria-label="Switch interface language" data-i18n-aria="languageSwitchAria">ಕನ್ನಡ</button>
           <button class="icon-action" id="theme-toggle" type="button" aria-label="Switch to dark mode" title="Switch appearance">◐</button>
         </div>
       </header>
       
       <!-- PANELS CONTAINER -->
       <div class="panels-container">
+
+        <!-- OFFICER WORKSPACE V2 -->
+        <section class="content-panel active officer-panel" id="today-panel">
+          <div class="officer-page-heading">
+            <div><span class="eyebrow" id="today-kicker" data-i18n="shiftBriefing">SHIFT BRIEFING</span><h2 id="today-greeting" data-i18n="greeting">Good morning, Inspector</h2><p id="today-summary">Loading the work that needs your attention…</p></div>
+            <div class="brief-date" id="today-date"></div>
+          </div>
+          <div class="attention-summary" id="today-attention-summary" aria-label="Today's work summary" data-i18n-aria="todaySummaryAria"></div>
+          <div class="officer-layout">
+            <section class="work-card work-card-primary">
+              <div class="work-card-heading"><div><span class="eyebrow" id="today-primary-kicker" data-i18n="priority">PRIORITY</span><h3 id="today-primary-title" data-i18n="needsAttention">Needs your attention</h3></div><button class="text-button" type="button" data-open-workspace="reviews" data-i18n="openReviewQueue">Open review queue</button></div>
+              <div id="today-priority-list" class="operational-list"><div class="workspace-loading" data-i18n="checkingRecords">Checking current case records…</div></div>
+            </section>
+            <aside class="work-card">
+              <div class="work-card-heading"><div><span class="eyebrow" id="today-secondary-kicker" data-i18n="continueLabel">CONTINUE</span><h3 id="today-secondary-title" data-i18n="recentCases">Recent cases</h3></div></div>
+              <div id="today-recent-cases" class="compact-case-list"></div>
+            </aside>
+          </div>
+          <section class="work-card waiting-card">
+            <div class="work-card-heading"><div><span class="eyebrow" id="today-handoff-kicker" data-i18n="handoffs">HANDOFFS</span><h3 id="today-handoff-title" data-i18n="waitingReview">Waiting on review</h3></div></div>
+            <div id="today-handoffs" class="handoff-strip"></div>
+          </section>
+          <section class="work-card shift-action-centre" id="shift-action-centre"></section>
+        </section>
+
+        <section class="content-panel officer-panel" id="cases-panel">
+          <div class="officer-page-heading">
+            <div><span class="eyebrow" data-i18n="investigation">INVESTIGATION</span><h2 data-i18n="myCases">My Cases</h2><p data-i18n="myCasesIntro">Open a case to review its facts, evidence, timeline and next action.</p></div>
+            <button class="primary-action" type="button" data-open-workspace="intake" data-i18n="registerFir">Register FIR</button>
+          </div>
+          <div class="case-toolbar">
+            <label class="case-search"><span data-i18n="searchCases">Search cases</span><input id="case-list-search" type="search" placeholder="FIR number, offence or district" data-i18n-placeholder="caseSearchPlaceholder"></label>
+            <div class="filter-chips" id="case-filter-chips" aria-label="Filter cases" data-i18n-aria="filterCasesAria">
+              <button class="filter-chip active" type="button" data-case-filter="all" data-i18n="allCases">All cases</button>
+              <button class="filter-chip" type="button" data-case-filter="attention" data-i18n="needsAttention">Needs attention</button>
+              <button class="filter-chip" type="button" data-case-filter="recent" data-i18n="recentlyRegistered">Recently registered</button>
+            </div>
+          </div>
+          <div id="case-list" class="case-list-grid"><div class="workspace-loading" data-i18n="loadingCases">Loading cases…</div></div>
+        </section>
+
+        <section class="content-panel officer-panel" id="case-panel">
+          <button class="back-button" id="case-back-button" type="button" data-i18n="backToCases">← Back to My Cases</button>
+          <div class="case-cockpit-header">
+            <div><span class="eyebrow" id="case-workspace-jurisdiction">CASE WORKSPACE</span><h2 id="case-workspace-title" tabindex="-1" data-i18n="selectCase">Select a case</h2><p id="case-workspace-subtitle"></p></div>
+            <div class="case-header-actions"><button class="secondary-action" id="case-request-review" type="button" data-i18n="requestReview">Request review</button><button class="primary-action" id="case-ask-drishti" type="button" data-i18n="askDrishti">Ask Drishti</button></div>
+          </div>
+          <div class="case-facts-bar" id="case-facts-bar"></div>
+          <details class="case-role-journey-wrap">
+            <summary><span>Case decision path</span><small>See station, analyst and supervisor handoffs</small></summary>
+            <section class="case-role-journey" id="case-role-journey" aria-label="Case decision path"></section>
+          </details>
+          <div class="case-tabs" role="tablist" aria-label="Case sections" data-i18n-aria="caseSectionsAria">
+            <button class="case-tab active" id="case-tab-overview" type="button" role="tab" aria-selected="true" aria-controls="case-workspace-body" data-case-tab="overview" data-i18n="overview">Overview</button>
+            <button class="case-tab" id="case-tab-timeline" type="button" role="tab" aria-selected="false" aria-controls="case-workspace-body" data-case-tab="timeline" data-i18n="timeline">Timeline</button>
+            <button class="case-tab" id="case-tab-evidence" type="button" role="tab" aria-selected="false" aria-controls="case-workspace-body" data-case-tab="evidence" data-i18n="evidence">Evidence</button>
+            <button class="case-tab" id="case-tab-links" type="button" role="tab" aria-selected="false" aria-controls="case-workspace-body" data-case-tab="links" data-i18n="linkedCases">Linked Cases</button>
+            <button class="case-tab" id="case-tab-reviews" type="button" role="tab" aria-selected="false" aria-controls="case-workspace-body" data-case-tab="reviews" data-i18n="reviews">Reviews</button>
+          </div>
+          <div id="case-workspace-body" class="case-workspace-body" role="tabpanel" aria-labelledby="case-tab-overview"><div class="workspace-loading" data-i18n="chooseCase">Choose a case from My Cases.</div></div>
+          <section id="case-workflow-board" class="case-workflow-board" hidden></section>
+        </section>
+
+        <section class="content-panel officer-panel" id="reviews-panel">
+          <div class="officer-page-heading">
+            <div><span class="eyebrow" data-i18n="supervision">SUPERVISION</span><h2 data-i18n="reviewQueue">Review Queue</h2><p data-i18n="reviewQueueIntro">Cases and officer requests requiring a recorded human decision.</p></div>
+            <span class="human-control-badge" data-i18n="humanApprovalRequired">Human approval required</span>
+          </div>
+          <div class="review-layout">
+            <section class="work-card"><div class="work-card-heading"><div><span class="eyebrow" data-i18n="prioritised">PRIORITISED</span><h3 data-i18n="casesRequiringReview">Cases requiring review</h3></div></div><div id="review-case-list" class="operational-list"><div class="workspace-loading" data-i18n="buildingReviewQueue">Building the review queue…</div></div></section>
+            <aside class="work-card"><div class="work-card-heading"><div><span class="eyebrow" data-i18n="requests">REQUESTS</span><h3 data-i18n="officerHandoffs">Officer handoffs</h3></div></div><div id="review-action-list" class="review-action-list"></div></aside>
+          </div>
+          <section id="supervisor-command-centre" class="supervisor-command-centre"></section>
+        </section>
+
+        <section class="content-panel officer-panel agent-centre" id="agents-panel">
+          <div class="officer-page-heading agent-centre-heading">
+            <div><span class="eyebrow" id="agent-centre-eyebrow">POLICE TASKS</span><h2 id="agent-centre-title">What do you need to do?</h2><p id="agent-centre-intro">Choose one task. Drishti checks approved records, shows its sources, and prepares work for your review.</p></div>
+            <span class="human-control-badge" id="agent-centre-control">Draft only · officer decides</span>
+          </div>
+          <div class="agent-trust-strip" aria-label="How police tasks work">
+            <span><b>1</b> Choose task</span><span><b>2</b> Choose FIR</span><span><b>3</b> Review the draft</span><span class="agent-no-execution">Nothing is submitted until you decide</span>
+          </div>
+          <div class="agent-centre-layout">
+            <section class="agent-catalogue" aria-labelledby="agent-catalogue-title">
+              <div class="agent-catalogue-toolbar"><div><span class="eyebrow" id="agent-catalogue-kicker">AVAILABLE FOR YOUR ROLE</span><h3 id="agent-catalogue-title">What do you need help with?</h3></div><label class="agent-search"><span class="sr-only">Find a police task</span><input id="agent-search" type="search" placeholder="Search tasks or agent name"></label></div>
+              <div class="agent-filter-chips" id="agent-filter-chips" aria-label="Filter agents"></div>
+              <div id="agent-cards" class="agent-cards"><div class="workspace-loading">Loading approved agents…</div></div>
+            </section>
+            <aside class="agent-runner" id="agent-runner" aria-labelledby="agent-runner-title">
+              <div id="agent-runner-empty" class="agent-runner-empty"><span class="agent-empty-symbol" aria-hidden="true">✓</span><h3 id="agent-runner-title">Choose a task</h3><p>The FIR, records checked, and officer controls will appear here.</p></div>
+              <div id="agent-runner-form" hidden></div>
+              <div id="agent-run-result" class="agent-run-result" aria-live="polite"></div>
+            </aside>
+          </div>
+        </section>
+
+        <aside class="drishti-drawer" id="drishti-drawer" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="drishti-drawer-title">
+          <div class="drawer-header"><div><span class="eyebrow" data-i18n="sourceLinkedAssistant">SOURCE-LINKED ASSISTANT</span><h2 id="drishti-drawer-title" data-i18n="askDrishti">Ask Drishti</h2></div><button id="drishti-drawer-close" class="drawer-close" type="button" aria-label="Close Drishti" data-i18n-aria="closeDrishtiAria">×</button></div>
+          <p class="drawer-intro" data-i18n="drishtiIntro">Drishti can review this case and prepare suggestions. It cannot alter a record or approve an action.</p>
+          <div class="suggested-prompts" id="drishti-suggested-prompts">
+            <button type="button" data-i18n="promptAttention">What needs attention in this case?</button>
+            <button type="button" data-i18n="promptEvidence">Which evidence is still missing?</button>
+            <button type="button" data-i18n="promptConflicts">Are there conflicting records?</button>
+          </div>
+          <label class="drishti-question"><span data-i18n="yourQuestion">Your question</span><textarea id="drishti-question" rows="3">What needs attention in this case?</textarea></label>
+          <button class="primary-action full-width" id="drishti-run" type="button" data-i18n="reviewWithDrishti">Review case with Drishti</button>
+          <div id="drishti-result" class="drishti-result" aria-live="polite"></div>
+        </aside>
+        <div class="drawer-scrim" id="drawer-scrim" hidden></div>
+
+        <button class="command-orb" id="command-orb" type="button" aria-haspopup="dialog" aria-controls="command-assistant" aria-expanded="false">
+          <span class="command-orb-mark" aria-hidden="true">✦</span>
+          <span><b>Ask Drishti</b><small>Voice or text · ⌘ J</small></span>
+        </button>
+        <div class="command-assistant-scrim" id="command-assistant-scrim" hidden></div>
+        <aside class="command-assistant" id="command-assistant" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="command-assistant-title">
+          <header class="command-assistant-header">
+            <div class="command-presence" aria-hidden="true"><span></span><span></span><span></span><b>✦</b></div>
+            <div><span class="eyebrow" id="command-assistant-kicker">DRISHTI COMMAND ASSISTANT</span><h2 id="command-assistant-title">What should we check?</h2><p id="command-assistant-context">Role-scoped · source-linked · officer decides</p></div>
+            <button class="command-close" id="command-assistant-close" type="button" aria-label="Close command assistant">×</button>
+          </header>
+          <section class="command-status" id="command-status" aria-live="polite">
+            <span class="command-status-dot"></span><div><strong id="command-status-title">Ready</strong><p id="command-status-detail">Ask about your shift, an FIR, evidence, timeline or linked cases.</p></div>
+          </section>
+          <div class="command-context-row">
+            <label id="command-case-label"><span>Case context</span><select id="command-case-select"><option value="">Select an FIR when needed</option></select></label>
+            <span class="command-role-chip" id="command-role-chip">Station Officer</span>
+          </div>
+          <div class="command-suggestions" id="command-suggestions" aria-label="Suggested commands"></div>
+          <label class="command-input-wrap" for="command-input">
+            <span class="sr-only">Ask Drishti</span>
+            <textarea id="command-input" rows="2" placeholder="Drishti, what evidence is missing in this FIR?"></textarea>
+            <button class="command-mic" id="command-mic" type="button" aria-label="Start voice input" aria-pressed="false"><span aria-hidden="true">◉</span><small>Speak</small></button>
+          </label>
+          <div class="command-actions">
+            <p id="command-boundary">Drishti prepares a draft. It cannot dispatch, contact, alter records or approve action.</p>
+            <button class="command-run" id="command-run" type="button">Check records</button>
+          </div>
+          <section class="command-output" id="command-output" aria-live="polite"></section>
+        </aside>
         
         <!-- PANEL: HOME (COMMAND CENTRE) -->
-        <section class="content-panel active" id="home-panel">
+        <section class="content-panel legacy-panel" id="home-panel">
           <div class="operation-heading">
             <div>
               <span class="eyebrow">KARNATAKA STATE COMMAND</span>
@@ -432,6 +611,20 @@
             </div>
           </div>
           <div class="panel-card" id="ai-fir-brief-panel"><div class="card-header"><h3>AI FIR Briefing &amp; Extracted Leads</h3><span class="header-muted-label">Source-linked; officer verification required</span></div><div id="ai-fir-brief" class="empty-state-detail">Load an FIR to generate an extractive briefing and verified entity leads.</div></div>
+        </section>
+
+        <!-- PANEL: CASE COMMANDER -->
+        <section class="content-panel" id="commander-panel">
+          <div class="lab-hero"><div><span class="eyebrow">SUPERVISOR WORKFLOW</span><h2>Case Commander</h2><p>Move from an FIR signal to an evidence-led, accountable review plan—without treating automated links as proof.</p></div><div class="method-chip amber">Human approval required</div></div>
+          <div class="panel-card sentinel-card"><div class="card-header"><div><span class="eyebrow">PROACTIVE SENTINEL</span><h3>What needs review now</h3></div><button id="sentinel-refresh" class="btn btn-secondary btn-sm" type="button">Refresh triggers</button></div><div id="sentinel-feed" class="sentinel-feed"><div class="loading-spinner">Checking anomaly and case-delay signals…</div></div><div id="sentinel-guardrail" class="header-muted-label"></div></div>
+          <div class="panel-card lab-controls"><label class="patrol-field">FIR context <select id="commander-case-select" class="filter-select"><option value="">Loading validated FIRs…</option></select></label><button id="commander-load" class="btn btn-primary" type="button">Build command plan</button></div>
+          <div id="commander-empty" class="empty-state-detail">Select an FIR to assemble its evidence requirements, linked-case review, and supervisor decision steps.</div>
+          <div id="commander-content" hidden>
+            <div id="commander-summary" class="metric-grid"></div>
+            <div class="columns-grid"><div class="grid-col col-60"><div class="panel-card"><div class="card-header"><h3>Command plan</h3><span class="header-muted-label">Ordered by evidence and supervisory need</span></div><div id="commander-steps" class="commander-steps"></div></div></div><div class="grid-col col-40"><div class="panel-card"><div class="card-header"><h3>Linked FIRs to verify</h3><span class="header-muted-label">Signals—not proof</span></div><div id="commander-links" class="details-list"></div></div><div class="human-review-note" id="commander-guardrail"></div></div></div>
+            <div class="panel-card agent-workbench"><div class="card-header"><div><span class="eyebrow">MODEL-BACKED AGENTIC CASE ROOM</span><h3>Scout → Skeptic → Commander</h3></div><span class="status-pill blue-pill">CONSTRAINED TOOL USE</span></div><p>The AI chooses the minimum necessary case tools, Scout develops source-linked leads, Skeptic challenges weak assumptions, and Commander drafts a human-review plan. It cannot dispatch, message, create a case, or approve action.</p><div class="command-query-row"><input id="agent-query" class="lab-input" maxlength="1200" placeholder="What must be verified before a district review?" value="What evidence must be verified before a district review?"><button id="agent-run" class="btn btn-primary" type="button">Investigate with AI agent</button></div><div id="agent-result" class="agent-result empty-state-detail">Build a command plan first, then run a source-cited maker–checker review.</div></div>
+            <div class="panel-card commander-approval"><div><span class="eyebrow">ACCOUNTABLE HANDOFF</span><h3>Record supervisor review</h3><p>This records a development-demo audit entry only; it does not dispatch personnel or modify a real investigation.</p></div><button id="commander-record-review" class="btn btn-primary" type="button">Record review request</button><div id="commander-audit" class="audit-result"></div></div>
+          </div>
         </section>
         
         <!-- PANEL: INTELLIGENCE PROFILE -->
@@ -779,6 +972,10 @@
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <!-- Application logic -->
-  <script src="index.js?v=20260725-fast-start"></script>
+  <script src="index.js?v=20260824-police-workspace-final"></script>
+  <script src="workspace-v2.js?v=20260824-police-workspace-final"></script>
+  <script src="agent-centre.js?v=20260825-agent-suite-4"></script>
+  <script src="workflow-v3.js?v=20260825-case-workflow-1"></script>
+  <script src="command-assistant.js?v=20260825-command-assistant-1"></script>
 </body>
 </html>

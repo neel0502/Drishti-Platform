@@ -12,6 +12,8 @@ It turns synthetic SCRB-style records into a state-level command dashboard, geog
 
 The live prototype runs on **Zoho Catalyst AppSail** and reads its connected relational development subset from **Catalyst Data Store** through ZCQL. The demonstration data is synthetic and consists of 2,000 FIR records plus linked relational tables.
 
+For a plain-language overview of the available workspace tools, AI agents, and synthetic test scenarios, open [`frontend/capabilities.html`](frontend/capabilities.html).
+
 ## Demonstrated workflows
 
 - State command dashboard with trends and district attention indicators
@@ -32,6 +34,13 @@ The live prototype runs on **Zoho Catalyst AppSail** and reads its connected rel
 - Patrol resource plans for selected districts, with Bangalore Urban boundary validation and out-of-district coordinate exclusion
 - Data Quality Command Centre for completeness, duplicate narratives, geography, chronology, and referential-integrity checks
 - Investigation Hypothesis Board for testable theories, linked FIRs, supporting evidence, and explicit evidence gaps
+- Agentic Case Room with a proactive Sentinel, Scout–Skeptic maker-checker review, claim-level citations, confidence revision, replayable tool trace, masked identifiers, chained audit hashes, and human-only action drafts
+- Role-aware Police Tasks Centre with 16 bounded workflows, including a minimum-necessary Patrol Shift Briefing alongside Shift Briefing, Case Triage, Evidence Gap, Timeline Reconstruction, Linked Case Verification, Statement Consistency, Investigation Planning, Supervisor Review, FIR Drafting, Legal Procedure, Evidence Intake, Data Quality, District Coordination, Victim Follow-up, and Court Readiness
+- English/Kannada agent UX with role-specific recommendations, pre-run record permissions, explicit non-execution boundaries, structured findings and skeptic checks, source cards, model/token audit metadata, and a human review handoff
+- Contextual agents embedded in Overview, Timeline, Evidence, Links, and Supervisor Review case tabs, with the selected FIR carried into the Agent Centre
+- Human-owned investigation tasks with due dates, priorities, officer handoff, supervisor return/approval, and state reconstructed from append-only events
+- Chain-of-custody workspace with collector, collection time/location, seal, receiver, SHA-256 metadata, and supervisor verification
+- Shift Briefing operational home, case-level agent/change history, and a supervisor command centre for decisions, overdue work, weak links, data quality, coordination drafts, and agent audits
 - Downloadable evidence-based PDF case briefs with timelines, linked FIR signals, missing evidence, and responsible-use notices
 - Retrospective forecast backtesting with actual-vs-predicted charts and comparison to a naive baseline
 - Responsive desktop, tablet, and mobile layouts with collapsible navigation and touch-friendly maps and tables
@@ -52,6 +61,10 @@ FastAPI intelligence and workflow service
   |-- historical forecast validation
   |-- PDF case-brief generation
   |-- NetworkX link analysis
+  |-- bounded OpenAI tool orchestration
+  |-- role and workflow policy validation
+  |-- append-only agent audit chain
+  |-- append-only task and custody event projection
           |
           v
 REST API + responsive web application
@@ -106,11 +119,14 @@ The deployed AppSail service must use the Catalyst-supplied `X_ZOHO_CATALYST_LIS
 ## Repository guide
 
 - `backend/app.py` — FastAPI service and analytics
+- `backend/agent_catalog.py` — bilingual role, tool, and safe-action policy for all 15 agents
+- `backend/ai_agent.py` — constrained OpenAI Responses API tool loop
 - `frontend/` — dashboard web application
 - `output/` — synthetic SCRB-style data
 - `submission/` — prototype brief, architecture notes, presentation HTML, and demo run-through
 - `DESIGN_BRIEF.md` — product and user-experience specification
 - `FEATURES_FROM_ERD.md` — features derived from the source schema
+- `ROUND2_AGENTIC_ARCHITECTURE.md` — governed-agent workflow, safety contract, and production path
 - `DATA_GENERATION_ANTIGRAVITY.md` — synthetic-data notes
 
 ## Data and responsible-use principles
@@ -120,6 +136,7 @@ The deployed AppSail service must use the Catalyst-supplied `X_ZOHO_CATALYST_LIS
 - Predictions must show supporting evidence, confidence, and limitations.
 - Human officers remain responsible for investigation and deployment decisions.
 - Production access requires role-based authorization and audit logs.
+- The prototype role selector is an explicit demo boundary. Production must derive officer identity, role, unit, district, and case scope from authenticated Catalyst identity claims; browser-supplied role values are never an authorization source.
 
 ## Evaluation materials
 

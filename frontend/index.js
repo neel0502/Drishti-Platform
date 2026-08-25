@@ -4,7 +4,7 @@
 const API_BASE = "/api";
 
 // State variables
-let activePanel = "home";
+let activePanel = "today";
 let districtGeoJSON = null;
 let dashboardMap = null;
 let mainMap = null;
@@ -26,6 +26,9 @@ let mockExtraction = null;
 let evidencePreviewUrl = null;
 let syntheticScenario = null;
 let drilldownLoaded = false;
+let agentReplayTimer = null;
+let currentAgentDraft = null;
+let legacyWorkspacePromise = null;
 
 // DOM Ready
 document.addEventListener("DOMContentLoaded", () => {
@@ -36,6 +39,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initCommandQueryAssistant();
   initDistrictDrilldown();
   initReconstruction();
+  initCaseCommander();
   initAnalyticsLabs();
   initRoleWorkspaces();
   initResponsiveShell();
@@ -46,12 +50,18 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 const workspaceMeta = {
+  today:["My work","Today"],
+  cases:["Investigation","My Cases"],
+  case:["Investigation","Case Workspace"],
+  agents:["Assisted police work","Police tasks"],
+  reviews:["Supervision","Review Queue"],
   home:["Command & Control","State Command Overview"],
   alerts:["Command & Control","Situations & Watches"],
   drilldown:["Command & Control","District Crime Intelligence"],
   search:["Investigation","Intelligence Search"],
   profile:["Investigation","Intelligence Profile"],
   reconstruction:["Investigation","Incident Reconstruction"],
+  commander:["Investigation","Case Commander"],
   networks:["Investigation","Crime Networks"],
   hypotheses:["Investigation","Investigative Hypotheses"],
   map:["Crime Analysis","State Crime Map"],
@@ -67,28 +77,28 @@ const workspaceMeta = {
 const roleWorkspaces = {
   command: {
     guidance: "Statewide oversight, cross-district approvals, and resource coordination.",
-    allowed: ["home","alerts","drilldown","search","intake","profile","reconstruction","networks","hypotheses","map","patterns","lifecycle","forecast","ai","patrol","quality"],
-    defaultPanel: "home"
+    allowed: ["today","cases","case","agents","reviews","home","alerts","drilldown","map","lifecycle","patrol","quality"],
+    defaultPanel: "today"
   },
   district: {
     guidance: "District supervision, station performance, investigations, and coordination requests.",
-    allowed: ["home","alerts","drilldown","search","intake","profile","reconstruction","networks","hypotheses","map","patterns","lifecycle","patrol","quality"],
-    defaultPanel: "drilldown"
+    allowed: ["today","cases","case","agents","reviews","home","alerts","drilldown","search","reconstruction","networks","map","lifecycle","patrol","quality"],
+    defaultPanel: "today"
   },
   station: {
     guidance: "Register a development FIR, inspect leads, identify evidence gaps, and request support.",
-    allowed: ["home","search","intake","profile","reconstruction","networks","hypotheses","map","lifecycle","quality"],
-    defaultPanel: "intake"
+    allowed: ["today","cases","case","agents","search","intake","reconstruction","commander","hypotheses","lifecycle"],
+    defaultPanel: "today"
   },
   patrol: {
     guidance: "Review shift risk, priority zones, situations, and allocated patrol units.",
-    allowed: ["home","alerts","map","patrol"],
-    defaultPanel: "patrol"
+    allowed: ["today","agents","home","alerts","map","patrol"],
+    defaultPanel: "today"
   },
   analyst: {
     guidance: "Link entities, analyse evidence, test hypotheses, and produce intelligence support.",
-    allowed: ["home","search","intake","profile","reconstruction","networks","hypotheses","map","patterns","lifecycle","forecast","ai","quality"],
-    defaultPanel: "search"
+    allowed: ["today","cases","case","agents","search","profile","reconstruction","networks","hypotheses","map","patterns","lifecycle","forecast","ai","quality"],
+    defaultPanel: "today"
   }
 };
 
@@ -369,7 +379,7 @@ async function initializeDashboardData() {
       const health = await response.json();
       if (response.ok && health.dataSource) {
         const source = health.dataSource;
-        const label = source.active === 'catalyst' ? 'Catalyst Data Store' : source.fallback ? 'CSV Fallback Active' : 'Local CSV Dataset';
+        const label = source.active === 'catalyst' ? 'Live police records' : 'Demo records';
         document.getElementById('data-source-status').textContent = label;
         document.querySelector('.status-indicator').title = source.message || label;
       }
@@ -380,18 +390,26 @@ async function initializeDashboardData() {
     await new Promise(resolve => setTimeout(resolve, 1000));
   }
 
-  await Promise.all([
-    fetchDashboardData(),
-    fetchMapData(),
-    fetchSituationsData(),
-    fetchNetworkGroups()
-  ]);
-  await initContextSelectors();
-  // Load secondary workspaces only after the command view is usable. This
-  // avoids a cold AppSail start being multiplied by hidden-panel requests.
-  initMockIntake();
-  loadDemoScenarios();
-  loadHypothesisBoards();
+  if (!["today", "cases", "case", "agents", "reviews"].includes(activePanel)) {
+    await initializeLegacyWorkspaces();
+  }
+}
+
+function initializeLegacyWorkspaces() {
+  if (legacyWorkspacePromise) return legacyWorkspacePromise;
+  legacyWorkspacePromise = (async () => {
+    await Promise.all([
+      fetchDashboardData(),
+      fetchMapData(),
+      fetchSituationsData(),
+      fetchNetworkGroups()
+    ]);
+    await initContextSelectors();
+    initMockIntake();
+    loadDemoScenarios();
+    loadHypothesisBoards();
+  })();
+  return legacyWorkspacePromise;
 }
 
 // ─── ANALYTICS LABS ──────────────────────────────────────────────────────
@@ -587,9 +605,23 @@ function renderForecastChart(series) {
 }
 
 function initResponsiveShell() {
-  const button=document.getElementById('mobile-menu-btn'); const sidebar=document.querySelector('.sidebar');
-  button.addEventListener('click',()=>sidebar.classList.toggle('mobile-open'));
-  document.querySelectorAll('.nav-link').forEach(link=>link.addEventListener('click',()=>sidebar.classList.remove('mobile-open')));
+  const button=document.getElementById('mobile-menu-btn');
+  const sidebar=document.querySelector('.sidebar');
+  const scrim=document.getElementById('mobile-nav-scrim');
+  const setOpen=open=>{
+    sidebar.classList.toggle('mobile-open',open);
+    button.setAttribute('aria-expanded',String(open));
+    scrim.hidden=!open;
+    if(open) sidebar.querySelector('.nav-link.active, .nav-link')?.focus();
+  };
+  button.setAttribute('aria-expanded','false');
+  button.addEventListener('click',()=>setOpen(!sidebar.classList.contains('mobile-open')));
+  scrim.addEventListener('click',()=>setOpen(false));
+  document.querySelectorAll('.nav-link').forEach(link=>link.addEventListener('click',()=>setOpen(false)));
+  document.addEventListener('keydown',event=>{
+    if(event.key==='Escape'&&sidebar.classList.contains('mobile-open')) { setOpen(false); button.focus(); }
+  });
+  window.addEventListener('resize',()=>{ if(window.innerWidth>900) setOpen(false); });
 }
 
 function renderPatrolMap(zones) {
@@ -622,6 +654,7 @@ function initNavigation() {
       
       activePanel = target;
       updateWorkspaceHeader(target);
+      if (!["today", "cases", "case", "agents", "reviews"].includes(target)) initializeLegacyWorkspaces();
       if (target === "drilldown" && !drilldownLoaded) {
         drilldownLoaded = true;
         loadDistrictDrilldown(document.getElementById("select-drilldown-district").value || 3);
@@ -1440,6 +1473,175 @@ function initReconstruction() {
   playButton.addEventListener("click", toggleReconstructionPlayback);
   document.getElementById("btn-request-review").addEventListener("click", () => submitOperationalAction(false));
   document.getElementById("btn-approve-coordination").addEventListener("click", () => submitOperationalAction(true));
+}
+
+function initCaseCommander() {
+  const select = document.getElementById("commander-case-select");
+  const loadButton = document.getElementById("commander-load");
+  const auditButton = document.getElementById("commander-record-review");
+  const agentButton = document.getElementById("agent-run");
+  const sentinelButton = document.getElementById("sentinel-refresh");
+  let activeCaseId = null;
+
+  fetchJson("/reconstruction-options").then(data => {
+    select.innerHTML = data.cases.map(item =>
+      `<option value="${item.caseId}">${escapeLab(item.crimeNo)} · ${escapeLab(item.district)} · ${escapeLab(item.crimeType)}</option>`
+    ).join("");
+  }).catch(error => {
+    select.innerHTML = `<option value="">Cases unavailable: ${escapeLab(error.message)}</option>`;
+  });
+
+  const loadSentinel = async () => {
+    const feed = document.getElementById("sentinel-feed");
+    feed.innerHTML = '<div class="loading-spinner">Checking anomaly and case-delay signals…</div>';
+    try {
+      const data = await fetchJson("/agent/sentinel?limit=6");
+      renderSentinelTriggers(data, select, loadButton);
+    } catch (error) {
+      feed.innerHTML = `<div class="analysis-note warning">Sentinel unavailable: ${escapeLab(error.message)}</div>`;
+    }
+  };
+  sentinelButton.addEventListener("click", loadSentinel);
+  document.getElementById("sentinel-feed").innerHTML = '<div class="empty-state-detail">Open this specialist tool only when a proactive district review is required.</div>';
+
+  const loadPlan = async () => {
+    if (!select.value) return;
+    const empty = document.getElementById("commander-empty");
+    empty.hidden = false;
+    empty.textContent = "Assembling recorded evidence, missing links, and review steps…";
+    try {
+      const data = await fetchJson(`/cases/${encodeURIComponent(select.value)}/command-plan`);
+      activeCaseId = data.case.caseId;
+      renderCaseCommander(data);
+      empty.hidden = true;
+      document.getElementById("commander-content").hidden = false;
+      labLoaded.add("commander");
+    } catch (error) {
+      empty.textContent = `Command plan unavailable: ${error.message}`;
+    }
+  };
+
+  loadButton.addEventListener("click", loadPlan);
+  auditButton.addEventListener("click", async () => {
+    if (!activeCaseId) return;
+    auditButton.disabled = true;
+    try {
+      const response = await fetch(`${API_BASE}/actions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          caseId: activeCaseId,
+          actionType: currentAgentDraft?.actionType || "case-command-review",
+          rationale: currentAgentDraft?.rationale || "Supervisor review requested from the Case Commander evidence and linked-case plan.",
+          approved: false
+        })
+      });
+      const result = await response.json();
+      document.getElementById("commander-audit").textContent = response.ok
+        ? `Audit #${result.actionId}: ${result.status}.`
+        : `Review could not be recorded: ${result.detail || response.status}.`;
+    } catch (error) {
+      document.getElementById("commander-audit").textContent = `Review could not be recorded: ${error.message}.`;
+    } finally {
+      auditButton.disabled = false;
+    }
+  });
+
+  agentButton.addEventListener("click", async () => {
+    if (!activeCaseId) return;
+    const result = document.getElementById("agent-result");
+    const query = document.getElementById("agent-query").value.trim();
+    const role = document.getElementById("role-select").value;
+    agentButton.disabled = true;
+    result.className = "agent-result";
+    result.textContent = "The AI agent is choosing case tools, checking evidence, and drafting a cited human-review plan…";
+    try {
+      const response = await fetch(`${API_BASE}/agent/investigate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ caseId: activeCaseId, role, query })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Agent review unavailable");
+      renderAgentResult(data);
+    } catch (error) {
+      result.className = "agent-result analysis-note warning";
+      result.textContent = `Agent review unavailable: ${error.message}`;
+    } finally {
+      agentButton.disabled = false;
+    }
+  });
+}
+
+function renderSentinelTriggers(data, select, loadButton) {
+  const feed = document.getElementById("sentinel-feed");
+  feed.innerHTML = data.triggers.length ? data.triggers.map(trigger => `<article class="sentinel-trigger"><div><span class="status-pill ${trigger.severity === "high review" ? "red-pill" : "amber-pill"}">${escapeLab(trigger.category)}</span><h4>${escapeLab(trigger.title)}</h4><p>${escapeLab(trigger.rationale)}</p><small>${escapeLab(trigger.source)}</small></div>${trigger.caseId ? `<button class="btn btn-secondary btn-sm" type="button" data-sentinel-case="${trigger.caseId}" data-sentinel-title="${escapeLab(trigger.title)}">Open case room</button>` : ""}</article>`).join("") : '<div class="empty-state-detail">No proactive review trigger met the current thresholds.</div>';
+  document.getElementById("sentinel-guardrail").textContent = `${data.status} · ${data.guardrail}`;
+  feed.querySelectorAll("[data-sentinel-case]").forEach(button => button.addEventListener("click", () => {
+    const caseId = button.dataset.sentinelCase;
+    if (![...select.options].some(option => option.value === caseId)) {
+      select.add(new Option(`Sentinel case · ${button.dataset.sentinelTitle}`, caseId));
+    }
+    select.value = caseId;
+    loadButton.click();
+  }));
+}
+
+function renderCaseCommander(data) {
+  currentAgentDraft = null;
+  const priorityClass = data.priority === "HIGH REVIEW" ? "alert" : "";
+  document.getElementById("commander-summary").innerHTML = `
+    <div class="metric-card ${priorityClass}"><div class="value">${escapeLab(data.priority)}</div><div class="label">Review priority</div></div>
+    <div class="metric-card"><div class="value">${data.evidenceCompleteness}%</div><div class="label">Evidence completeness</div></div>
+    <div class="metric-card ${data.strongestLinkScore >= 75 ? "alert" : ""}"><div class="value">${data.strongestLinkScore}/100</div><div class="label">Strongest FIR link</div></div>
+    <div class="metric-card"><div class="value">${data.steps.length}</div><div class="label">Review steps</div></div>`;
+  document.getElementById("commander-steps").innerHTML = data.steps.map((step, index) => `
+    <article class="commander-step commander-${escapeLab(step.priority)}"><div class="commander-step-index">${index + 1}</div><div><span class="header-muted-label">${escapeLab(step.stage)}</span><h3>${escapeLab(step.title)}</h3><p>${escapeLab(step.rationale)}</p><div class="commander-next"><strong>Officer next step:</strong> ${escapeLab(step.nextStep)}</div></div></article>`).join("") || '<div class="empty-state-detail">No additional review steps were generated for this FIR.</div>';
+  document.getElementById("commander-links").innerHTML = data.linkedCases.length ? data.linkedCases.map(link => `
+    <div class="details-item"><span class="details-label">FIR ${escapeLab(link.crimeNo)} · ${link.connectionScore}/100</span><span class="details-value">${escapeLab(link.district)} · ${escapeLab(link.crimeType)}<small style="display:block;color:var(--text-muted)">${escapeLab(link.evidence?.map(item => item.type).join(" · ") || "Recorded link signals")}</small></span></div>`).join("") : "No cross-case links meet the review threshold.";
+  document.getElementById("commander-guardrail").textContent = data.guardrail;
+  document.getElementById("commander-audit").textContent = "";
+  document.getElementById("agent-result").className = "agent-result empty-state-detail";
+  document.getElementById("agent-result").textContent = "Run the Safe Investigation Agent to generate an evidence-cited review draft.";
+}
+
+function renderAgentResult(data) {
+  currentAgentDraft = data.actionDraft;
+  const result = document.getElementById("agent-result");
+  result.className = "agent-result";
+  const reviews = Object.fromEntries(data.skepticReviews.map(review => [review.claimId, review]));
+  const tokenUsage = data.model?.tokenUsage || { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+  const modelLabel = data.model?.name ? `${data.model.provider} · ${data.model.name}` : "deterministic safety fallback";
+  result.innerHTML = `<div class="agent-run-head"><span class="status-pill blue-pill">${escapeLab(data.run.status)}</span><span class="header-muted-label">${escapeLab(data.run.runId)} · plan hash ${escapeLab(data.run.planFingerprint)}</span></div><div class="agent-model-strip"><strong>${escapeLab(modelLabel)}</strong><span>${tokenUsage.totalTokens ? `${tokenUsage.totalTokens.toLocaleString()} tokens` : "No model tokens used"}</span></div>${data.model?.warning ? `<div class="analysis-note warning">${escapeLab(data.model.warning)}</div>` : ""}<p class="mo-paragraph">${escapeLab(data.answer)}</p><div class="agent-replay-header"><strong>Agent run replay</strong><button class="btn btn-secondary btn-sm" id="agent-replay-button" type="button">Replay reasoning flow</button></div><div class="agent-stage-grid">${data.stages.map((stage,index) => `<article class="agent-stage" data-agent-stage="${index}"><span class="agent-stage-number">${index+1}</span><div><span class="header-muted-label">${escapeLab(stage.status)}</span><h4>${escapeLab(stage.name)}</h4><p>${escapeLab(stage.summary)}</p><small>${stage.toolNames.length ? `Tools: ${stage.toolNames.map(escapeLab).join(" · ")}` : "No execution tools"}</small></div></article>`).join("")}</div><div class="agent-claims"><strong>Maker–checker claim review</strong>${data.claims.map(claim => { const review=reviews[claim.id]; return `<article class="agent-claim"><div class="agent-claim-head"><span class="status-pill border-pill">${escapeLab(claim.id)} · ${escapeLab(claim.recordStatus)}</span><span>${claim.confidenceBeforeReview}% → ${review.confidenceAfterReview}%</span></div><p>${escapeLab(claim.statement)}</p><div class="agent-skeptic"><strong>Skeptic: ${escapeLab(review.verdict)}</strong><span>${escapeLab(review.challenge)}</span><small>Support: ${claim.supportingSourceIds.map(escapeLab).join(", ")} · Challenge: ${review.contradictingSourceIds.map(escapeLab).join(", ")}</small></div></article>`; }).join("")}</div><div class="agent-columns"><div><strong>Commander’s human-review draft</strong><ol class="decision-list">${data.recommendedActions.map(action => `<li><strong>${escapeLab(action.title)}</strong><br><span>${escapeLab(action.reason)}</span><small>Sources: ${action.sourceIds.map(escapeLab).join(", ")} · Human approval required</small></li>`).join("")}</ol></div><div><strong>Evidence citations</strong><div class="details-list">${data.citations.map(citation => `<div class="details-item"><span class="details-label">${escapeLab(citation.id)} · ${escapeLab(citation.confidence)}</span><span class="details-value">${escapeLab(citation.label)}<small style="display:block;color:var(--text-muted)">${escapeLab(citation.source)}</small></span></div>`).join("")}</div></div></div><div class="agent-tools">Tools chosen by agent: ${data.toolsUsed.map(tool => escapeLab(tool.name)).join(" → ")}</div><div class="human-review-note">${data.guardrails.map(escapeLab).join(" ")}</div><div class="agent-environment-note">${escapeLab(data.environmentNotice)}</div>`;
+  const auditMeta = document.createElement("span");
+  auditMeta.id = "agent-audit-meta";
+  auditMeta.className = "agent-audit-meta";
+  auditMeta.textContent = `Audit ${data.run.auditHash.slice(0, 12)}… · ${data.run.auditPersistence}`;
+  auditMeta.title = `SHA-256 ${data.run.auditHash}`;
+  result.querySelector(".agent-run-head").appendChild(auditMeta);
+  document.getElementById("agent-replay-button").addEventListener("click", replayAgentStages);
+}
+
+function replayAgentStages() {
+  const stages = [...document.querySelectorAll(".agent-stage")];
+  if (!stages.length) return;
+  if (agentReplayTimer) clearInterval(agentReplayTimer);
+  stages.forEach(stage => stage.classList.remove("active", "complete"));
+  let index = 0;
+  const advance = () => {
+    stages.forEach((stage, stageIndex) => {
+      stage.classList.toggle("active", stageIndex === index);
+      stage.classList.toggle("complete", stageIndex < index);
+    });
+    index += 1;
+    if (index > stages.length) {
+      clearInterval(agentReplayTimer);
+      agentReplayTimer = null;
+      stages.forEach(stage => { stage.classList.remove("active"); stage.classList.add("complete"); });
+    }
+  };
+  advance();
+  agentReplayTimer = setInterval(advance, 900);
 }
 
 async function loadIncidentReconstruction(caseId) {
