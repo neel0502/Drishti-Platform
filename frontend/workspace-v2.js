@@ -12,7 +12,7 @@
     language: localStorage.getItem("drishti-language") || "en"
   };
 
-  const voiceBriefingState = { status: "idle", utterance: null };
+  const voiceBriefingState = { status: "idle", utterance: null, aiText: null, aiAgentId: null };
 
   const translations = {
     en: {
@@ -73,11 +73,15 @@
       answer: "Answer", recordedFacts: "Recorded facts and checks", recommendedActions: "Recommended next actions", sourcesUsed: "Sources used",
       suggestionsOnly: "Suggestions only · Officer verification and approval required", whySuggested: "Why did Drishti suggest this?",
       drishtiUnavailable: "Drishti review unavailable", recordUnchanged: "The case record remains available and unchanged.",
-      workspaceUnavailable: "Workspace data is temporarily unavailable"
-      , listenBriefing: "Listen to briefing", pauseBriefing: "Pause", resumeBriefing: "Resume",
+      workspaceUnavailable: "Workspace data is temporarily unavailable",
+      listenBriefing: "Listen to briefing", pauseBriefing: "Pause", resumeBriefing: "Resume",
       stopBriefing: "Stop", briefingPlaying: "Reading the role-scoped briefing.", briefingPaused: "Briefing paused.",
       briefingStopped: "Briefing stopped.", voiceBriefingUnavailable: "Voice briefing is not supported in this browser.",
-      briefingBoundary: "This is decision support. Verify the cited records before taking action."
+      briefingBoundary: "This is decision support. Verify the cited records before taking action.",
+      generateAiBriefing: "Generate detailed AI briefing", generatingAiBriefing: "Generating AI briefing…",
+      aiBriefingTitle: "Detailed AI shift briefing", aiBriefingFailed: "The detailed AI briefing could not be generated.",
+      aiBriefingFallback: "Validated fallback", aiBriefingSources: "Sources reviewed", listenAiBriefing: "Listen to AI briefing",
+      openAgentCentre: "Open full agent review", aiBriefingDraft: "Draft only · officer decides"
     },
     kn: {
       myWork: "ನನ್ನ ಕೆಲಸ", today: "ಇಂದು", myCases: "ನನ್ನ ಪ್ರಕರಣಗಳು", reviewQueue: "ಪರಿಶೀಲನಾ ಸರತಿ",
@@ -137,11 +141,15 @@
       answer: "ಉತ್ತರ", recordedFacts: "ದಾಖಲಿತ ವಾಸ್ತವಾಂಶಗಳು ಮತ್ತು ಪರಿಶೀಲನೆಗಳು", recommendedActions: "ಶಿಫಾರಸು ಮಾಡಿದ ಮುಂದಿನ ಕ್ರಮಗಳು", sourcesUsed: "ಬಳಸಿದ ಮೂಲಗಳು",
       suggestionsOnly: "ಸಲಹೆಗಳು ಮಾತ್ರ · ಅಧಿಕಾರಿ ಪರಿಶೀಲನೆ ಮತ್ತು ಅನುಮೋದನೆ ಅಗತ್ಯ", whySuggested: "ದೃಷ್ಟಿ ಇದನ್ನು ಏಕೆ ಸೂಚಿಸಿತು?",
       drishtiUnavailable: "ದೃಷ್ಟಿ ಪರಿಶೀಲನೆ ಲಭ್ಯವಿಲ್ಲ", recordUnchanged: "ಪ್ರಕರಣ ದಾಖಲೆ ಲಭ್ಯವಿದೆ ಮತ್ತು ಬದಲಾಗಿಲ್ಲ.",
-      workspaceUnavailable: "ಕಾರ್ಯಸ್ಥಳದ ಡೇಟಾ ತಾತ್ಕಾಲಿಕವಾಗಿ ಲಭ್ಯವಿಲ್ಲ"
-      , listenBriefing: "ಪಾಳಿ ಮಾಹಿತಿ ಆಲಿಸಿ", pauseBriefing: "ವಿರಾಮ", resumeBriefing: "ಮುಂದುವರಿಸಿ",
+      workspaceUnavailable: "ಕಾರ್ಯಸ್ಥಳದ ಡೇಟಾ ತಾತ್ಕಾಲಿಕವಾಗಿ ಲಭ್ಯವಿಲ್ಲ",
+      listenBriefing: "ಪಾಳಿ ಮಾಹಿತಿ ಆಲಿಸಿ", pauseBriefing: "ವಿರಾಮ", resumeBriefing: "ಮುಂದುವರಿಸಿ",
       stopBriefing: "ನಿಲ್ಲಿಸಿ", briefingPlaying: "ಪಾತ್ರಕ್ಕೆ ಅನುಗುಣವಾದ ಪಾಳಿ ಮಾಹಿತಿಯನ್ನು ಓದುತ್ತಿದೆ.", briefingPaused: "ಪಾಳಿ ಮಾಹಿತಿ ವಿರಾಮದಲ್ಲಿದೆ.",
       briefingStopped: "ಪಾಳಿ ಮಾಹಿತಿ ನಿಲ್ಲಿಸಲಾಗಿದೆ.", voiceBriefingUnavailable: "ಈ ಬ್ರೌಸರ್‌ನಲ್ಲಿ ಧ್ವನಿ ಪಾಳಿ ಮಾಹಿತಿ ಲಭ್ಯವಿಲ್ಲ.",
-      briefingBoundary: "ಇದು ನಿರ್ಧಾರ ಸಹಾಯ ಮಾತ್ರ. ಕ್ರಮ ಕೈಗೊಳ್ಳುವ ಮೊದಲು ಉಲ್ಲೇಖಿತ ದಾಖಲೆಗಳನ್ನು ಪರಿಶೀಲಿಸಿ."
+      briefingBoundary: "ಇದು ನಿರ್ಧಾರ ಸಹಾಯ ಮಾತ್ರ. ಕ್ರಮ ಕೈಗೊಳ್ಳುವ ಮೊದಲು ಉಲ್ಲೇಖಿತ ದಾಖಲೆಗಳನ್ನು ಪರಿಶೀಲಿಸಿ.",
+      generateAiBriefing: "ವಿವರವಾದ ಎಐ ಪಾಳಿ ಮಾಹಿತಿ ಸಿದ್ಧಪಡಿಸಿ", generatingAiBriefing: "ಎಐ ಪಾಳಿ ಮಾಹಿತಿ ಸಿದ್ಧವಾಗುತ್ತಿದೆ…",
+      aiBriefingTitle: "ವಿವರವಾದ ಎಐ ಪಾಳಿ ಮಾಹಿತಿ", aiBriefingFailed: "ವಿವರವಾದ ಎಐ ಪಾಳಿ ಮಾಹಿತಿ ಸಿದ್ಧಪಡಿಸಲಾಗಲಿಲ್ಲ.",
+      aiBriefingFallback: "ಪರಿಶೀಲಿತ ಪರ್ಯಾಯ", aiBriefingSources: "ಪರಿಶೀಲಿಸಿದ ಮೂಲಗಳು", listenAiBriefing: "ಎಐ ಪಾಳಿ ಮಾಹಿತಿ ಆಲಿಸಿ",
+      openAgentCentre: "ಪೂರ್ಣ ಏಜೆಂಟ್ ಪರಿಶೀಲನೆ ತೆರೆಯಿರಿ", aiBriefingDraft: "ಕರಡು ಮಾತ್ರ · ಅಧಿಕಾರಿ ನಿರ್ಧರಿಸುತ್ತಾರೆ"
     }
   };
 
@@ -200,6 +208,7 @@
     initDrishtiDrawer();
     initLanguageSwitch();
     initVoiceBriefing();
+    initDetailedAiBriefing();
     initPeripheralTranslations();
     loadOfficerWorkspace();
     updateTodayDate();
@@ -361,7 +370,79 @@
     updateVoiceBriefingControls("");
   }
 
+  function initDetailedAiBriefing() {
+    document.getElementById("today-ai-briefing-button").addEventListener("click", generateDetailedAiBriefing);
+    updateDetailedAiBriefingButton();
+  }
+
+  async function generateDetailedAiBriefing() {
+    const button = document.getElementById("today-ai-briefing-button");
+    const panel = document.getElementById("today-ai-briefing");
+    const agentId = currentRole() === "patrol" ? "patrol-shift-briefing" : "shift-briefing";
+    const query = workspaceState.language === "kn"
+      ? "ಪ್ರಸ್ತುತ ಪಾಳಿಗೆ ವಿವರವಾದ ಮೂಲ-ಸಂಬಂಧಿತ ಮಾಹಿತಿ ಸಿದ್ಧಪಡಿಸಿ. ಆದ್ಯತೆಗಳು, ಬಾಕಿ ಮಾನವ ಪರಿಶೀಲನೆಗಳು, ಅನಿಶ್ಚಿತತೆ ಮತ್ತು ಸುರಕ್ಷಿತ ಮುಂದಿನ ಹಂತಗಳನ್ನು ಪ್ರತ್ಯೇಕಿಸಿ."
+      : "Prepare a detailed source-linked briefing for the current shift. Separate priorities, pending human reviews, uncertainty, and the safest next verification steps.";
+    stopVoiceBriefing(false);
+    voiceBriefingState.aiText = null;
+    voiceBriefingState.aiAgentId = agentId;
+    button.disabled = true;
+    document.getElementById("today-ai-briefing-label").textContent = tr("generatingAiBriefing");
+    panel.hidden = false;
+    panel.innerHTML = `<div class="ai-briefing-progress"><span aria-hidden="true">✦</span><div><strong>${escapeLab(tr("generatingAiBriefing"))}</strong><p>${workspaceState.language === "kn" ? "ಅನುಮೋದಿತ ಪಾಳಿ ದಾಖಲೆಗಳನ್ನು ಓದಿ, ದುರ್ಬಲ ಕಂಡುಹಿಡಿಕೆಗಳನ್ನು ಪ್ರಶ್ನಿಸಿ ಮತ್ತು ಮೂಲಗಳನ್ನು ಜೋಡಿಸುತ್ತಿದೆ." : "Reading approved shift records, challenging weak findings, and attaching sources."}</p></div></div>`;
+    let timeout;
+    try {
+      const controller = new AbortController();
+      timeout = window.setTimeout(() => controller.abort(), 65000);
+      const response = await fetch("/api/agents/run", {
+        method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
+        body: JSON.stringify({ agentId, caseId: null, role: currentRole(), language: workspaceState.language, query })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || `Request failed (${response.status})`);
+      renderDetailedAiBriefing(data);
+    } catch (error) {
+      voiceBriefingState.aiText = null;
+      const detail = error.name === "AbortError" ? "The agent response window expired." : error.message;
+      panel.innerHTML = `<div class="ai-briefing-error"><strong>${escapeLab(tr("aiBriefingFailed"))}</strong><p>${escapeLab(detail)}</p><span>${escapeLab(tr("listenBriefing"))} remains available without AI.</span></div>`;
+    } finally {
+      window.clearTimeout(timeout);
+      button.disabled = false;
+      updateDetailedAiBriefingButton();
+    }
+  }
+
+  function renderDetailedAiBriefing(data) {
+    const panel = document.getElementById("today-ai-briefing");
+    const fallback = data.run?.aiProvider === "deterministic-fallback";
+    const model = fallback ? tr("aiBriefingFallback") : `OpenAI · ${data.run?.aiModel || "gpt-5-mini"}`;
+    const citations = (data.citations || []).slice(0, 4);
+    const claims = (data.claims || []).slice(0, 3);
+    voiceBriefingState.aiText = String(data.answer || "");
+    panel.innerHTML = `<div class="ai-briefing-head"><div><span class="eyebrow">${escapeLab(tr("aiBriefingDraft"))}</span><h3>${escapeLab(tr("aiBriefingTitle"))}</h3></div><span class="ai-briefing-model ${fallback ? "fallback" : ""}">${escapeLab(model)}</span></div>
+      <p class="ai-briefing-answer">${escapeLab(data.answer)}</p>
+      ${claims.length ? `<div class="ai-briefing-findings">${claims.map(claim => `<article><span>${escapeLab(claim.recordStatus)}</span><strong>${escapeLab(claim.statement)}</strong><small>${Number(claim.confidenceBeforeReview || 0)}% · ${(claim.supportingSourceIds || []).map(escapeLab).join(" · ")}</small></article>`).join("")}</div>` : ""}
+      <details class="ai-briefing-sources"><summary>${escapeLab(tr("aiBriefingSources"))} · ${citations.length}</summary>${citations.map(citation => `<p><strong>${escapeLab(citation.id)} · ${escapeLab(citation.label)}</strong><span>${escapeLab(citation.source)}</span></p>`).join("")}</details>
+      <div class="ai-briefing-actions"><button type="button" id="today-ai-listen">▶ ${escapeLab(tr("listenAiBriefing"))}</button><button type="button" id="today-ai-open-agent">${escapeLab(tr("openAgentCentre"))}</button></div>
+      <p class="ai-briefing-boundary">${escapeLab(tr("briefingBoundary"))}</p>`;
+    document.getElementById("today-ai-listen").addEventListener("click", startVoiceBriefing);
+    document.getElementById("today-ai-open-agent").addEventListener("click", () => window.DrishtiAgents?.open(voiceBriefingState.aiAgentId, null));
+    updateVoiceBriefingControls("");
+  }
+
+  function updateDetailedAiBriefingButton() {
+    const label = document.getElementById("today-ai-briefing-label");
+    if (label && !document.getElementById("today-ai-briefing-button")?.disabled) label.textContent = tr("generateAiBriefing");
+  }
+
+  function clearDetailedAiBriefing() {
+    voiceBriefingState.aiText = null;
+    voiceBriefingState.aiAgentId = null;
+    const panel = document.getElementById("today-ai-briefing");
+    if (panel) { panel.hidden = true; panel.innerHTML = ""; }
+  }
+
   function buildVoiceBriefingText() {
+    if (voiceBriefingState.aiText) return `${voiceBriefingState.aiText} ${tr("briefingBoundary")}`;
     const parts = [
       document.getElementById("today-greeting").textContent.trim(),
       document.getElementById("today-summary").textContent.trim()
@@ -696,6 +777,7 @@
 
   function applyLanguage() {
     stopVoiceBriefing(false);
+    clearDetailedAiBriefing();
     const kannada = workspaceState.language === "kn";
     document.documentElement.lang = kannada ? "kn" : "en";
     document.body.dataset.language = workspaceState.language;
@@ -713,6 +795,7 @@
     if (!question.value.trim() || knownPrompts.includes(question.value.trim())) question.value = tr("promptAttention");
     updateTodayDate();
     updateVoiceBriefingControls("");
+    updateDetailedAiBriefingButton();
     updateOfficerHeader(activePanel);
     if (workspaceState.cases.length) {
       renderToday();

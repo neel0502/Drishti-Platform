@@ -129,6 +129,17 @@ def test_today_voice_briefing_is_bilingual_private_and_controllable():
     assert 'briefingBoundary:' in WORKSPACE_JS
 
 
+def test_today_detailed_ai_briefing_uses_bounded_shift_agent():
+    assert 'id="today-ai-briefing-button"' in HTML
+    assert 'id="today-ai-briefing"' in HTML
+    assert 'fetch("/api/agents/run"' in WORKSPACE_JS
+    assert 'currentRole() === "patrol" ? "patrol-shift-briefing" : "shift-briefing"' in WORKSPACE_JS
+    assert 'body: JSON.stringify({ agentId, caseId: null, role: currentRole()' in WORKSPACE_JS
+    assert 'data.run?.aiProvider === "deterministic-fallback"' in WORKSPACE_JS
+    assert 'voiceBriefingState.aiText = String(data.answer || "")' in WORKSPACE_JS
+    assert 'window.DrishtiAgents?.open(voiceBriefingState.aiAgentId, null)' in WORKSPACE_JS
+
+
 def test_phone_and_tablet_shell_has_accessible_navigation():
     assert 'id="mobile-nav-scrim" hidden' in HTML
     assert "button.setAttribute('aria-expanded',String(open))" in JS

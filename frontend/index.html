@@ -197,6 +197,7 @@
             <div><span class="eyebrow" id="today-kicker" data-i18n="shiftBriefing">SHIFT BRIEFING</span><h2 id="today-greeting" data-i18n="greeting">Good morning, Inspector</h2><p id="today-summary">Loading the work that needs your attention…</p></div>
             <div class="brief-heading-side">
               <div class="voice-briefing-controls" aria-label="Voice briefing controls">
+                <button class="ai-briefing-generate" id="today-ai-briefing-button" type="button"><span aria-hidden="true">✦</span><span id="today-ai-briefing-label">Generate detailed AI briefing</span></button>
                 <button class="voice-briefing-toggle" id="today-voice-toggle" type="button" aria-label="Listen to shift briefing"><span aria-hidden="true">▶</span><span id="today-voice-label">Listen to briefing</span></button>
                 <button class="voice-briefing-stop" id="today-voice-stop" type="button" aria-label="Stop shift briefing" hidden>■</button>
                 <span class="voice-briefing-status" id="today-voice-status" aria-live="polite"></span>
@@ -204,6 +205,7 @@
               <div class="brief-date" id="today-date"></div>
             </div>
           </div>
+          <section class="ai-briefing-panel" id="today-ai-briefing" aria-live="polite" hidden></section>
           <div class="attention-summary" id="today-attention-summary" aria-label="Today's work summary" data-i18n-aria="todaySummaryAria"></div>
           <div class="officer-layout">
             <section class="work-card work-card-primary">
