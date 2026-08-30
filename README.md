@@ -41,6 +41,7 @@ For a plain-language overview of the available workspace tools, AI agents, and s
 - Human-owned investigation tasks with due dates, priorities, officer handoff, supervisor return/approval, and state reconstructed from append-only events
 - Chain-of-custody workspace with collector, collection time/location, seal, receiver, SHA-256 metadata, and supervisor verification
 - Shift Briefing operational home, case-level agent/change history, and a supervisor command centre for decisions, overdue work, weak links, data quality, coordination drafts, and agent audits
+- Private, bilingual voice briefing on the Today workspace with listen, pause, resume, and stop controls; narration is generated on-device from the officer's visible role-scoped summary and uses no additional API token
 - Downloadable evidence-based PDF case briefs with timelines, linked FIR signals, missing evidence, and responsible-use notices
 - Retrospective forecast backtesting with actual-vs-predicted charts and comparison to a naive baseline
 - Responsive desktop, tablet, and mobile layouts with collapsible navigation and touch-friendly maps and tables
@@ -119,11 +120,10 @@ The deployed AppSail service must use the Catalyst-supplied `X_ZOHO_CATALYST_LIS
 ## Repository guide
 
 - `backend/app.py` — FastAPI service and analytics
-- `backend/agent_catalog.py` — bilingual role, tool, and safe-action policy for all 15 agents
+- `backend/agent_catalog.py` — bilingual role, tool, and safe-action policy for all 16 agents
 - `backend/ai_agent.py` — constrained OpenAI Responses API tool loop
 - `frontend/` — dashboard web application
 - `output/` — synthetic SCRB-style data
-- `submission/` — prototype brief, architecture notes, presentation HTML, and demo run-through
 - `DESIGN_BRIEF.md` — product and user-experience specification
 - `FEATURES_FROM_ERD.md` — features derived from the source schema
 - `ROUND2_AGENTIC_ARCHITECTURE.md` — governed-agent workflow, safety contract, and production path

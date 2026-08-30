@@ -117,6 +117,18 @@ def test_command_assistant_exposes_voice_sources_and_reduced_motion():
     assert "prefers-reduced-motion" in COMMAND_CSS
 
 
+def test_today_voice_briefing_is_bilingual_private_and_controllable():
+    assert 'id="today-voice-toggle"' in HTML
+    assert 'id="today-voice-stop"' in HTML
+    assert "SpeechSynthesisUtterance" in WORKSPACE_JS
+    assert "speechSynthesis.pause()" in WORKSPACE_JS
+    assert "speechSynthesis.resume()" in WORKSPACE_JS
+    assert "speechSynthesis.cancel()" in WORKSPACE_JS
+    assert 'utterance.lang = workspaceState.language === "kn" ? "kn-IN" : "en-IN"' in WORKSPACE_JS
+    assert 'document.querySelectorAll("#today-priority-list .operational-item")' in WORKSPACE_JS
+    assert 'briefingBoundary:' in WORKSPACE_JS
+
+
 def test_phone_and_tablet_shell_has_accessible_navigation():
     assert 'id="mobile-nav-scrim" hidden' in HTML
     assert "button.setAttribute('aria-expanded',String(open))" in JS

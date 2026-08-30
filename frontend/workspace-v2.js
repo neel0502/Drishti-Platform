@@ -12,6 +12,8 @@
     language: localStorage.getItem("drishti-language") || "en"
   };
 
+  const voiceBriefingState = { status: "idle", utterance: null };
+
   const translations = {
     en: {
       myWork: "My work", today: "Today", myCases: "My Cases", reviewQueue: "Review Queue",
@@ -72,6 +74,10 @@
       suggestionsOnly: "Suggestions only · Officer verification and approval required", whySuggested: "Why did Drishti suggest this?",
       drishtiUnavailable: "Drishti review unavailable", recordUnchanged: "The case record remains available and unchanged.",
       workspaceUnavailable: "Workspace data is temporarily unavailable"
+      , listenBriefing: "Listen to briefing", pauseBriefing: "Pause", resumeBriefing: "Resume",
+      stopBriefing: "Stop", briefingPlaying: "Reading the role-scoped briefing.", briefingPaused: "Briefing paused.",
+      briefingStopped: "Briefing stopped.", voiceBriefingUnavailable: "Voice briefing is not supported in this browser.",
+      briefingBoundary: "This is decision support. Verify the cited records before taking action."
     },
     kn: {
       myWork: "ನನ್ನ ಕೆಲಸ", today: "ಇಂದು", myCases: "ನನ್ನ ಪ್ರಕರಣಗಳು", reviewQueue: "ಪರಿಶೀಲನಾ ಸರತಿ",
@@ -132,6 +138,10 @@
       suggestionsOnly: "ಸಲಹೆಗಳು ಮಾತ್ರ · ಅಧಿಕಾರಿ ಪರಿಶೀಲನೆ ಮತ್ತು ಅನುಮೋದನೆ ಅಗತ್ಯ", whySuggested: "ದೃಷ್ಟಿ ಇದನ್ನು ಏಕೆ ಸೂಚಿಸಿತು?",
       drishtiUnavailable: "ದೃಷ್ಟಿ ಪರಿಶೀಲನೆ ಲಭ್ಯವಿಲ್ಲ", recordUnchanged: "ಪ್ರಕರಣ ದಾಖಲೆ ಲಭ್ಯವಿದೆ ಮತ್ತು ಬದಲಾಗಿಲ್ಲ.",
       workspaceUnavailable: "ಕಾರ್ಯಸ್ಥಳದ ಡೇಟಾ ತಾತ್ಕಾಲಿಕವಾಗಿ ಲಭ್ಯವಿಲ್ಲ"
+      , listenBriefing: "ಪಾಳಿ ಮಾಹಿತಿ ಆಲಿಸಿ", pauseBriefing: "ವಿರಾಮ", resumeBriefing: "ಮುಂದುವರಿಸಿ",
+      stopBriefing: "ನಿಲ್ಲಿಸಿ", briefingPlaying: "ಪಾತ್ರಕ್ಕೆ ಅನುಗುಣವಾದ ಪಾಳಿ ಮಾಹಿತಿಯನ್ನು ಓದುತ್ತಿದೆ.", briefingPaused: "ಪಾಳಿ ಮಾಹಿತಿ ವಿರಾಮದಲ್ಲಿದೆ.",
+      briefingStopped: "ಪಾಳಿ ಮಾಹಿತಿ ನಿಲ್ಲಿಸಲಾಗಿದೆ.", voiceBriefingUnavailable: "ಈ ಬ್ರೌಸರ್‌ನಲ್ಲಿ ಧ್ವನಿ ಪಾಳಿ ಮಾಹಿತಿ ಲಭ್ಯವಿಲ್ಲ.",
+      briefingBoundary: "ಇದು ನಿರ್ಧಾರ ಸಹಾಯ ಮಾತ್ರ. ಕ್ರಮ ಕೈಗೊಳ್ಳುವ ಮೊದಲು ಉಲ್ಲೇಖಿತ ದಾಖಲೆಗಳನ್ನು ಪರಿಶೀಲಿಸಿ."
     }
   };
 
@@ -189,6 +199,7 @@
     initCaseWorkspaceControls();
     initDrishtiDrawer();
     initLanguageSwitch();
+    initVoiceBriefing();
     initPeripheralTranslations();
     loadOfficerWorkspace();
     updateTodayDate();
@@ -320,6 +331,102 @@
       : `<span class="workspace-empty">${tr("noHandoffs")}</span>`;
     bindOpenCaseButtons(document.getElementById("today-panel"));
     document.querySelectorAll("[data-open-patrol-map]").forEach(button => button.addEventListener("click", () => document.querySelector('.nav-link[data-target="map"]')?.click()));
+  }
+
+  function initVoiceBriefing() {
+    const toggle = document.getElementById("today-voice-toggle");
+    const stop = document.getElementById("today-voice-stop");
+    if (!("speechSynthesis" in window) || typeof window.SpeechSynthesisUtterance !== "function") {
+      toggle.disabled = true;
+      document.getElementById("today-voice-status").textContent = tr("voiceBriefingUnavailable");
+      return;
+    }
+    toggle.addEventListener("click", () => {
+      if (voiceBriefingState.status === "speaking") {
+        window.speechSynthesis.pause();
+        voiceBriefingState.status = "paused";
+        updateVoiceBriefingControls(tr("briefingPaused"));
+        return;
+      }
+      if (voiceBriefingState.status === "paused") {
+        window.speechSynthesis.resume();
+        voiceBriefingState.status = "speaking";
+        updateVoiceBriefingControls(tr("briefingPlaying"));
+        return;
+      }
+      startVoiceBriefing();
+    });
+    stop.addEventListener("click", () => stopVoiceBriefing(true));
+    window.addEventListener("beforeunload", () => stopVoiceBriefing(false));
+    updateVoiceBriefingControls("");
+  }
+
+  function buildVoiceBriefingText() {
+    const parts = [
+      document.getElementById("today-greeting").textContent.trim(),
+      document.getElementById("today-summary").textContent.trim()
+    ];
+    document.querySelectorAll("#today-attention-summary .attention-tile").forEach(tile => {
+      const label = tile.querySelector(".tile-label")?.textContent.trim();
+      const value = tile.querySelector("strong")?.textContent.trim();
+      const detail = [...tile.querySelectorAll("span")].at(-1)?.textContent.trim();
+      if (label && value) parts.push(`${label}: ${value}${detail ? `. ${detail}` : ""}.`);
+    });
+    const priorities = [...document.querySelectorAll("#today-priority-list .operational-item")].slice(0, 3);
+    if (priorities.length) parts.push(workspaceState.language === "kn" ? "ಮುಖ್ಯ ಆದ್ಯತೆಗಳು." : "Top priorities.");
+    priorities.forEach(item => {
+      const meta = item.querySelector(".operational-meta")?.textContent.trim();
+      const title = item.querySelector("h4")?.textContent.trim();
+      const detail = item.querySelector("p")?.textContent.trim();
+      parts.push([meta, title, detail].filter(Boolean).join(". "));
+    });
+    const handoffs = document.querySelectorAll("#today-handoffs .handoff-pill").length;
+    if (handoffs) parts.push(workspaceState.language === "kn" ? `${handoffs} ಹಸ್ತಾಂತರಗಳು ಮಾನವ ಪರಿಶೀಲನೆಗಾಗಿ ಕಾಯುತ್ತಿವೆ.` : `${handoffs} handoffs are waiting for human review.`);
+    parts.push(tr("briefingBoundary"));
+    return parts.filter(Boolean).join(" ");
+  }
+
+  function startVoiceBriefing() {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(buildVoiceBriefingText());
+    utterance.lang = workspaceState.language === "kn" ? "kn-IN" : "en-IN";
+    utterance.rate = .92;
+    const languagePrefix = workspaceState.language === "kn" ? "kn" : "en";
+    const matchingVoice = window.speechSynthesis.getVoices().find(voice => String(voice.lang || "").toLowerCase().startsWith(languagePrefix));
+    if (matchingVoice) utterance.voice = matchingVoice;
+    utterance.onend = () => finishVoiceBriefing("");
+    utterance.onerror = event => finishVoiceBriefing(event.error === "canceled" ? "" : tr("voiceBriefingUnavailable"));
+    voiceBriefingState.utterance = utterance;
+    voiceBriefingState.status = "speaking";
+    updateVoiceBriefingControls(tr("briefingPlaying"));
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function stopVoiceBriefing(announce) {
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    finishVoiceBriefing(announce ? tr("briefingStopped") : "");
+  }
+
+  function finishVoiceBriefing(statusText) {
+    voiceBriefingState.status = "idle";
+    voiceBriefingState.utterance = null;
+    updateVoiceBriefingControls(statusText);
+  }
+
+  function updateVoiceBriefingControls(statusText) {
+    const toggle = document.getElementById("today-voice-toggle");
+    const stop = document.getElementById("today-voice-stop");
+    const label = document.getElementById("today-voice-label");
+    const status = document.getElementById("today-voice-status");
+    if (!toggle || !stop || !label || !status) return;
+    const key = voiceBriefingState.status === "speaking" ? "pauseBriefing" : voiceBriefingState.status === "paused" ? "resumeBriefing" : "listenBriefing";
+    label.textContent = tr(key);
+    toggle.querySelector("span[aria-hidden]").textContent = voiceBriefingState.status === "speaking" ? "Ⅱ" : "▶";
+    toggle.setAttribute("aria-label", tr(key));
+    toggle.setAttribute("aria-pressed", String(voiceBriefingState.status !== "idle"));
+    stop.hidden = voiceBriefingState.status === "idle";
+    stop.setAttribute("aria-label", tr("stopBriefing"));
+    status.textContent = statusText || "";
   }
 
   function renderPatrolPriority(item) {
@@ -588,6 +695,7 @@
   }
 
   function applyLanguage() {
+    stopVoiceBriefing(false);
     const kannada = workspaceState.language === "kn";
     document.documentElement.lang = kannada ? "kn" : "en";
     document.body.dataset.language = workspaceState.language;
@@ -604,6 +712,7 @@
       translations.kn.promptAttention, translations.kn.promptEvidence, translations.kn.promptConflicts];
     if (!question.value.trim() || knownPrompts.includes(question.value.trim())) question.value = tr("promptAttention");
     updateTodayDate();
+    updateVoiceBriefingControls("");
     updateOfficerHeader(activePanel);
     if (workspaceState.cases.length) {
       renderToday();

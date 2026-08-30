@@ -76,6 +76,14 @@ body.show-advanced-nav .advanced-tools-label { display: block; }
 .officer-page-heading p { color: var(--workspace-muted); font-size: 15px; }
 .eyebrow { color: var(--police-blue); font-family: 'JetBrains Mono', monospace; }
 .brief-date { color: var(--workspace-muted); font-weight: 650; }
+.brief-heading-side { display: flex; align-items: flex-end; flex-direction: column; gap: 9px; }
+.voice-briefing-controls { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.voice-briefing-toggle, .voice-briefing-stop { min-height: 44px; border: 1px solid #9db7ca; border-radius: 8px; background: white; color: var(--police-blue); font-weight: 750; }
+.voice-briefing-toggle { display: inline-flex; align-items: center; gap: 8px; padding: 0 14px; }
+.voice-briefing-toggle:hover, .voice-briefing-stop:hover { background: var(--workspace-soft-blue); border-color: var(--police-blue); }
+.voice-briefing-toggle:disabled { cursor: not-allowed; opacity: .58; }
+.voice-briefing-stop { width: 44px; padding: 0; color: var(--workspace-red); }
+.voice-briefing-status { flex-basis: 100%; min-height: 18px; color: var(--workspace-muted); font-size: 11px; text-align: right; }
 
 .primary-action, .secondary-action { min-height: 46px; border-radius: 8px; padding: 0 18px; font-size: 14px; font-weight: 750; }
 .primary-action { background: var(--police-blue); color: white; box-shadow: 0 3px 9px rgba(23,105,170,.18); }
@@ -204,6 +212,9 @@ body.show-advanced-nav .advanced-tools-label { display: block; }
 @media (max-width: 760px) {
   .officer-panel { padding: 20px 14px 50px; }
   .officer-page-heading, .case-cockpit-header { align-items: flex-start; flex-direction: column; }
+  .brief-heading-side { width: 100%; align-items: flex-start; }
+  .voice-briefing-controls { width: 100%; justify-content: flex-start; }
+  .voice-briefing-status { text-align: left; }
   .attention-summary { grid-template-columns: 1fr 1fr; }
   .case-toolbar { align-items: stretch; flex-direction: column; }
   .filter-chips { overflow-x: auto; flex-wrap: nowrap; }
