@@ -27,6 +27,9 @@ generate_data.py
 .catalystrc
 .env
 .env.*
+
+# Local competition submission artifacts (decks, PDFs, scripts and briefs)
+submission/
 .appsail-build/
 .catalyst-migration/
 catalyst-debug.log
@@ -35,7 +38,6 @@ catalyst-debug.log
 tmp/pdfs/
 deployment/catalyst/iac/generated/
 export_*.zip
-
 
 
 
