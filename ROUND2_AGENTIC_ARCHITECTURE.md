@@ -31,6 +31,8 @@ Generated narrative output masks phone, vehicle, and 12-digit identity values by
 
 ## Production path
 
+The complete deployment topology, security controls, service inventory, release checklist, operational targets, and phased rollout are documented in [`docs/SUBMISSION_ARCHITECTURE.md`](docs/SUBMISSION_ARCHITECTURE.md).
+
 The deployed prototype is intentionally a development environment with synthetic data. A production deployment uses:
 
 - Catalyst-authenticated identity claims; the server maps those claims to role, district, and case scope. Browser-provided roles are never trusted.

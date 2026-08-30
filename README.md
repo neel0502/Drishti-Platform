@@ -128,6 +128,7 @@ The deployed AppSail service must use the Catalyst-supplied `X_ZOHO_CATALYST_LIS
 - `DESIGN_BRIEF.md` — product and user-experience specification
 - `FEATURES_FROM_ERD.md` — features derived from the source schema
 - `ROUND2_AGENTIC_ARCHITECTURE.md` — governed-agent workflow, safety contract, and production path
+- `docs/SUBMISSION_ARCHITECTURE.md` — submission-ready prototype architecture, agent/data flows, complete Catalyst production topology, security, operations, deployment checklist, and rollout plan
 - `DATA_GENERATION_ANTIGRAVITY.md` — synthetic-data notes
 
 ## Data and responsible-use principles
