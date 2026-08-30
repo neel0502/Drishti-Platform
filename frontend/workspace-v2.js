@@ -350,21 +350,7 @@
       document.getElementById("today-voice-status").textContent = tr("voiceBriefingUnavailable");
       return;
     }
-    toggle.addEventListener("click", () => {
-      if (voiceBriefingState.status === "speaking") {
-        window.speechSynthesis.pause();
-        voiceBriefingState.status = "paused";
-        updateVoiceBriefingControls(tr("briefingPaused"));
-        return;
-      }
-      if (voiceBriefingState.status === "paused") {
-        window.speechSynthesis.resume();
-        voiceBriefingState.status = "speaking";
-        updateVoiceBriefingControls(tr("briefingPlaying"));
-        return;
-      }
-      startVoiceBriefing();
-    });
+    toggle.addEventListener("click", toggleVoiceBriefing);
     stop.addEventListener("click", () => stopVoiceBriefing(true));
     window.addEventListener("beforeunload", () => stopVoiceBriefing(false));
     updateVoiceBriefingControls("");
@@ -422,9 +408,10 @@
       <p class="ai-briefing-answer">${escapeLab(data.answer)}</p>
       ${claims.length ? `<div class="ai-briefing-findings">${claims.map(claim => `<article><span>${escapeLab(claim.recordStatus)}</span><strong>${escapeLab(claim.statement)}</strong><small>${Number(claim.confidenceBeforeReview || 0)}% · ${(claim.supportingSourceIds || []).map(escapeLab).join(" · ")}</small></article>`).join("")}</div>` : ""}
       <details class="ai-briefing-sources"><summary>${escapeLab(tr("aiBriefingSources"))} · ${citations.length}</summary>${citations.map(citation => `<p><strong>${escapeLab(citation.id)} · ${escapeLab(citation.label)}</strong><span>${escapeLab(citation.source)}</span></p>`).join("")}</details>
-      <div class="ai-briefing-actions"><button type="button" id="today-ai-listen">▶ ${escapeLab(tr("listenAiBriefing"))}</button><button type="button" id="today-ai-open-agent">${escapeLab(tr("openAgentCentre"))}</button></div>
+      <div class="ai-briefing-actions"><button type="button" id="today-ai-listen" aria-pressed="false"><span class="voice-action-icon" aria-hidden="true">▶</span><span id="today-ai-listen-label">${escapeLab(tr("listenAiBriefing"))}</span><span class="voice-briefing-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span></button><button class="danger" type="button" id="today-ai-stop" hidden><span aria-hidden="true">■</span> ${escapeLab(tr("stopBriefing"))}</button><button type="button" id="today-ai-open-agent">${escapeLab(tr("openAgentCentre"))}</button></div>
       <p class="ai-briefing-boundary">${escapeLab(tr("briefingBoundary"))}</p>`;
-    document.getElementById("today-ai-listen").addEventListener("click", startVoiceBriefing);
+    document.getElementById("today-ai-listen").addEventListener("click", toggleVoiceBriefing);
+    document.getElementById("today-ai-stop").addEventListener("click", () => stopVoiceBriefing(true));
     document.getElementById("today-ai-open-agent").addEventListener("click", () => window.DrishtiAgents?.open(voiceBriefingState.aiAgentId, null));
     updateVoiceBriefingControls("");
   }
@@ -435,6 +422,7 @@
   }
 
   function clearDetailedAiBriefing() {
+    if (voiceBriefingState.status !== "idle") stopVoiceBriefing(false);
     voiceBriefingState.aiText = null;
     voiceBriefingState.aiAgentId = null;
     const panel = document.getElementById("today-ai-briefing");
@@ -442,7 +430,15 @@
   }
 
   function buildVoiceBriefingText() {
-    if (voiceBriefingState.aiText) return `${voiceBriefingState.aiText} ${tr("briefingBoundary")}`;
+    if (voiceBriefingState.aiText) {
+      const opening = workspaceState.language === "kn"
+        ? "ಅಧಿಕಾರಿ ಪಾಳಿ ಮಾಹಿತಿ. ಈಗ ನಿಮ್ಮ ಗಮನ ಅಗತ್ಯವಿರುವ ವಿಷಯಗಳು ಇವು."
+        : "Officer briefing. Here is what needs your attention now.";
+      const closing = workspaceState.language === "kn"
+        ? "ಮಾಹಿತಿ ಮುಕ್ತಾಯ. ಕ್ರಮ ಕೈಗೊಳ್ಳುವ ಮೊದಲು ಉಲ್ಲೇಖಿತ ದಾಖಲೆಗಳನ್ನು ಪರಿಶೀಲಿಸಿ."
+        : "End of briefing. Verify the cited records before taking action.";
+      return `${opening} ${prepareNarrationText(voiceBriefingState.aiText)} ${closing}`;
+    }
     const parts = [
       document.getElementById("today-greeting").textContent.trim(),
       document.getElementById("today-summary").textContent.trim()
@@ -464,16 +460,41 @@
     const handoffs = document.querySelectorAll("#today-handoffs .handoff-pill").length;
     if (handoffs) parts.push(workspaceState.language === "kn" ? `${handoffs} ಹಸ್ತಾಂತರಗಳು ಮಾನವ ಪರಿಶೀಲನೆಗಾಗಿ ಕಾಯುತ್ತಿವೆ.` : `${handoffs} handoffs are waiting for human review.`);
     parts.push(tr("briefingBoundary"));
-    return parts.filter(Boolean).join(" ");
+    return prepareNarrationText(parts.filter(Boolean).join(" "));
+  }
+
+  function prepareNarrationText(value) {
+    return String(value || "")
+      .replace(/https?:\/\/\S+/gi, "")
+      .replace(/\[([^\]]+)\]/g, "$1")
+      .replace(/[*_#`>]/g, "")
+      .replace(/\bFIR\b/g, "F I R")
+      .replace(/\bPS\b/g, "Police Station")
+      .replace(/\s*[•·]\s*/g, ". ")
+      .replace(/\s+[-–—]\s+/g, ". ")
+      .replace(/\s+/g, " ")
+      .replace(/([.!?])(?=[A-Z])/g, "$1 ")
+      .trim();
+  }
+
+  function selectBriefingVoice(languagePrefix) {
+    const voices = window.speechSynthesis.getVoices().filter(voice => String(voice.lang || "").toLowerCase().startsWith(languagePrefix));
+    const preferredName = /natural|neural|enhanced|premium|siri|google|microsoft|rishi|veena|lekha/i;
+    return voices.sort((a, b) => {
+      const score = voice => (preferredName.test(voice.name) ? 8 : 0) + (voice.default ? 4 : 0) + (voice.localService ? 2 : 0);
+      return score(b) - score(a);
+    })[0] || null;
   }
 
   function startVoiceBriefing() {
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(buildVoiceBriefingText());
     utterance.lang = workspaceState.language === "kn" ? "kn-IN" : "en-IN";
-    utterance.rate = .92;
+    utterance.rate = workspaceState.language === "kn" ? .9 : .97;
+    utterance.pitch = 1.02;
+    utterance.volume = 1;
     const languagePrefix = workspaceState.language === "kn" ? "kn" : "en";
-    const matchingVoice = window.speechSynthesis.getVoices().find(voice => String(voice.lang || "").toLowerCase().startsWith(languagePrefix));
+    const matchingVoice = selectBriefingVoice(languagePrefix);
     if (matchingVoice) utterance.voice = matchingVoice;
     utterance.onend = () => finishVoiceBriefing("");
     utterance.onerror = event => finishVoiceBriefing(event.error === "canceled" ? "" : tr("voiceBriefingUnavailable"));
@@ -481,6 +502,22 @@
     voiceBriefingState.status = "speaking";
     updateVoiceBriefingControls(tr("briefingPlaying"));
     window.speechSynthesis.speak(utterance);
+  }
+
+  function toggleVoiceBriefing() {
+    if (voiceBriefingState.status === "speaking") {
+      window.speechSynthesis.pause();
+      voiceBriefingState.status = "paused";
+      updateVoiceBriefingControls(tr("briefingPaused"));
+      return;
+    }
+    if (voiceBriefingState.status === "paused") {
+      window.speechSynthesis.resume();
+      voiceBriefingState.status = "speaking";
+      updateVoiceBriefingControls(tr("briefingPlaying"));
+      return;
+    }
+    startVoiceBriefing();
   }
 
   function stopVoiceBriefing(announce) {
@@ -508,6 +545,20 @@
     stop.hidden = voiceBriefingState.status === "idle";
     stop.setAttribute("aria-label", tr("stopBriefing"));
     status.textContent = statusText || "";
+
+    const aiToggle = document.getElementById("today-ai-listen");
+    const aiStop = document.getElementById("today-ai-stop");
+    const aiLabel = document.getElementById("today-ai-listen-label");
+    if (aiToggle && aiStop && aiLabel) {
+      const aiKey = voiceBriefingState.status === "speaking" ? "pauseBriefing" : voiceBriefingState.status === "paused" ? "resumeBriefing" : "listenAiBriefing";
+      aiLabel.textContent = tr(aiKey);
+      aiToggle.querySelector(".voice-action-icon").textContent = voiceBriefingState.status === "speaking" ? "Ⅱ" : "▶";
+      aiToggle.setAttribute("aria-label", tr(aiKey));
+      aiToggle.setAttribute("aria-pressed", String(voiceBriefingState.status !== "idle"));
+      aiToggle.dataset.voiceState = voiceBriefingState.status;
+      aiStop.hidden = voiceBriefingState.status === "idle";
+      aiStop.setAttribute("aria-label", tr("stopBriefing"));
+    }
   }
 
   function renderPatrolPriority(item) {

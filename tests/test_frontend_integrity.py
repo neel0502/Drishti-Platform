@@ -127,6 +127,8 @@ def test_today_voice_briefing_is_bilingual_private_and_controllable():
     assert 'utterance.lang = workspaceState.language === "kn" ? "kn-IN" : "en-IN"' in WORKSPACE_JS
     assert 'document.querySelectorAll("#today-priority-list .operational-item")' in WORKSPACE_JS
     assert 'briefingBoundary:' in WORKSPACE_JS
+    assert "selectBriefingVoice(languagePrefix)" in WORKSPACE_JS
+    assert "prepareNarrationText(voiceBriefingState.aiText)" in WORKSPACE_JS
 
 
 def test_today_detailed_ai_briefing_uses_bounded_shift_agent():
@@ -137,6 +139,9 @@ def test_today_detailed_ai_briefing_uses_bounded_shift_agent():
     assert 'body: JSON.stringify({ agentId, caseId: null, role: currentRole()' in WORKSPACE_JS
     assert 'data.run?.aiProvider === "deterministic-fallback"' in WORKSPACE_JS
     assert 'voiceBriefingState.aiText = String(data.answer || "")' in WORKSPACE_JS
+    assert 'id="today-ai-stop"' in WORKSPACE_JS
+    assert 'document.getElementById("today-ai-listen").addEventListener("click", toggleVoiceBriefing)' in WORKSPACE_JS
+    assert 'document.getElementById("today-ai-stop").addEventListener("click", () => stopVoiceBriefing(true))' in WORKSPACE_JS
     assert 'window.DrishtiAgents?.open(voiceBriefingState.aiAgentId, null)' in WORKSPACE_JS
 
 
